@@ -7,14 +7,14 @@ function HomePage({ onNavigate }) {
       </div>
 
       <div className="home-cards">
-        <article className="home-card card-new" onClick={() => onNavigate('cadastro')}>
+        <article className="home-card card-new" onClick={() => onNavigate('/novo-chamado')}>
           <div className="card-icon">📝</div>
           <h3>Novo Chamado</h3>
           <p>Registre uma nova solicitação de manutenção</p>
           <button type="button" className="card-button">Cadastrar</button>
         </article>
 
-        <article className="home-card card-history" onClick={() => onNavigate('registro')}>
+        <article className="home-card card-history" onClick={() => onNavigate('/meu-historico')}>
           <div className="card-icon">📋</div>
           <h3>Ver Histórico</h3>
           <p>Acompanhe todas as solicitações registradas</p>

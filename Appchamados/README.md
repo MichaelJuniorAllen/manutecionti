@@ -1,16 +1,78 @@
-# React + Vite
+# AppChamados
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Plataforma de gerenciamento de chamados com frontend React (Vite) e backend Node.js/Express.
 
-Currently, two official plugins are available:
+## Como rodar
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Entre na pasta `Appchamados`.
+2. Instale as dependências:
 
-## React Compiler
+```bash
+npm install
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+3. Inicie frontend + backend:
 
-## Expanding the Oxlint configuration
+```bash
+npm start
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Serviços padrão:
+
+- Frontend: `http://localhost:5173`
+- API: `http://localhost:4000`
+
+## Banco local automático
+
+No início da aplicação, o backend verifica automaticamente `server/data/database.json` e cria o arquivo com a estrutura inicial se não existir.
+
+## SMTP para confirmação de e-mail
+
+O sistema já está preparado para envio real do código de confirmação por SMTP.
+
+1. Copie `.env.example` para `.env`.
+2. Preencha as variáveis SMTP.
+3. Reinicie o `npm start`.
+
+Se SMTP não estiver configurado, o sistema entra em modo fallback local e registra o código no log do servidor para testes.
+
+## Deploy estável (Netlify + Backend externo)
+
+Para funcionar sem erro em produção, publique o frontend no Netlify e o backend em um serviço Node (Render, Railway, Fly.io, VPS etc).
+
+### 1. Publicar backend
+
+No serviço do backend, configure as variáveis:
+
+- `PORT=4000` (ou a porta do provedor)
+- `JWT_SECRET=seu_segredo_forte`
+- `JWT_EXPIRES_IN=8h`
+- `CORS_ORIGINS=https://SEU-SITE.netlify.app`
+- SMTP (opcional): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
+
+Após deploy, copie a URL pública da API, por exemplo:
+
+`https://seu-backend.onrender.com/api`
+
+### 2. Configurar Netlify
+
+No projeto Netlify:
+
+- Build command: `npm run build`
+- Publish directory: `dist`
+- Environment variable:
+	- `VITE_API_URL=https://seu-backend.onrender.com/api`
+
+Este repositório já inclui fallback de SPA:
+
+- `netlify.toml`
+- `public/_redirects`
+
+### 3. Validar após publicar
+
+1. Abra o site publicado no Netlify.
+2. Crie um chamado como visitante.
+3. Faça login e abra “Meu Histórico”.
+4. Verifique no backend se CORS aceita seu domínio Netlify.
+
+Se o frontend carregar e as chamadas de API responderem 200/401/403 corretamente (sem erro de CORS), o deploy está estável.

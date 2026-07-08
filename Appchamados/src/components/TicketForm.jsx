@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { PRIORITY_OPTIONS, buildTicket, saveTickets, getTickets } from '../utils/tickets'
+import { PRIORITY_OPTIONS } from '../utils/tickets'
 
-function TicketForm({ onSaved, onNavigate }) {
+function TicketForm({ onSubmitTicket, onNavigate }) {
   const [formValues, setFormValues] = useState({
     title: '',
     area: '',
@@ -11,33 +11,37 @@ function TicketForm({ onSaved, onNavigate }) {
     description: '',
   })
   const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(false)
 
   function handleChange(event) {
     const { name, value } = event.target
     setFormValues((current) => ({ ...current, [name]: value }))
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
-    const ticket = buildTicket(formValues)
-    const tickets = getTickets()
-    tickets.unshift(ticket)
-    saveTickets(tickets)
-    setFormValues({
-      title: '',
-      area: '',
-      requester: '',
-      priority: 'media',
-      responsible: '',
-      description: '',
-    })
-    setMessage('Seu chamado foi aberto com sucesso!')
-    onSaved?.()
-    
-    // Redirigir a la página de inicio después de 2.5 segundos
-    setTimeout(() => {
-      onNavigate?.('home')
-    }, 2500)
+    setLoading(true)
+
+    try {
+      await onSubmitTicket?.(formValues)
+      setFormValues({
+        title: '',
+        area: '',
+        requester: '',
+        priority: 'media',
+        responsible: '',
+        description: '',
+      })
+      setMessage('Seu chamado foi aberto com sucesso!')
+
+      window.setTimeout(() => {
+        onNavigate?.('/historico')
+      }, 1200)
+    } catch (error) {
+      setMessage(error.message || 'Não foi possível registrar o chamado.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -143,7 +147,9 @@ function TicketForm({ onSaved, onNavigate }) {
           </div>
 
           <div className="form-actions">
-            <button type="submit" className="btn-primary">✓ Registrar chamado</button>
+            <button type="submit" className="btn-primary" disabled={loading}>
+              {loading ? 'Registrando...' : '✓ Registrar chamado'}
+            </button>
             <button type="reset" className="btn-secondary">⟲ Limpar formulário</button>
           </div>
 

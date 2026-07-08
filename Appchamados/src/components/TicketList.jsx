@@ -1,68 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
-import { formatDate, getRemainingMs, getTickets, saveTickets, PRIORITY_MINUTES } from '../utils/tickets'
+import { formatDate, getRemainingMs } from '../utils/tickets'
 
-function TicketList({ refreshKey }) {
+function TicketList({ tickets = [], onUpdateStatus }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [priorityFilter, setPriorityFilter] = useState('todos')
-  const [tickets, setTickets] = useState(() => getTickets())
-  const [now, setNow] = useState(Date.now())
+  const [localTickets, setLocalTickets] = useState([])
 
   useEffect(() => {
-    setTickets(getTickets())
-  }, [refreshKey])
+    setLocalTickets(tickets)
+  }, [tickets])
 
-  // Actualizar el temporizador cada segundo
   useEffect(() => {
     const interval = window.setInterval(() => {
-      setNow(Date.now())
-      updateTicketPriorities()
-      // Forzar re-render actualizando tickets para que el countdown se recalcule
-      setTickets([...getTickets()])
+      setLocalTickets((current) => [...current])
     }, 1000)
 
     return () => window.clearInterval(interval)
   }, [])
-
-  function updateTicketPriorities() {
-    const storedTickets = getTickets()
-    let modified = false
-
-    storedTickets.forEach((ticket) => {
-      // No actualizar prioridad de tickets concluídos o sin dueAt
-      if (ticket.status === 'Concluído' || !ticket.dueAt) {
-        return
-      }
-
-      const remainingMs = new Date(ticket.dueAt).getTime() - Date.now()
-      const originalPriority = ticket.priority
-
-      // Cambiar prioridad basado en tiempo restante
-      if (remainingMs <= 0) {
-        ticket.priority = 'critica'
-      } else if (ticket.priority === 'media' && remainingMs <= 30 * 60 * 1000) {
-        // Si era media y quedan 30min o menos, cambiar a crítica
-        ticket.priority = 'critica'
-      } else if (ticket.priority === 'media' && remainingMs <= 60 * 60 * 1000) {
-        // Si era media y quedan 1h o menos, cambiar a alta
-        ticket.priority = 'alta'
-      } else if (ticket.priority === 'alta' && remainingMs <= 30 * 60 * 1000) {
-        // Si era alta y quedan 30min o menos, cambiar a crítica
-        ticket.priority = 'critica'
-      }
-
-      if (originalPriority !== ticket.priority) {
-        modified = true
-      }
-    })
-
-    if (modified) {
-      saveTickets(storedTickets)
-      setTickets([...storedTickets])
-    } else {
-      setTickets([...storedTickets])
-    }
-  }
 
   function formatDuration(createdAt, concludedAt, attendedAt) {
     if (!createdAt || !concludedAt) return '--'
@@ -97,7 +52,7 @@ function TicketList({ refreshKey }) {
     
     return [...ticketsToSort].sort((a, b) => {
       // Primero por prioridad
-      const priorityDiff = (priorityOrder[a.priority] || 5) - (priorityOrder[b.priority] || 5)
+      const priorityDiff = (priorityOrder[a.prioridade] || 5) - (priorityOrder[b.prioridade] || 5)
       if (priorityDiff !== 0) return priorityDiff
       
       // Luego por estado
@@ -105,7 +60,7 @@ function TicketList({ refreshKey }) {
       if (statusDiff !== 0) return statusDiff
       
       // Finalmente por fecha de creación (más antiguos primero)
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      return new Date(a.dataAbertura).getTime() - new Date(b.dataAbertura).getTime()
     })
   }
 
@@ -129,25 +84,6 @@ function TicketList({ refreshKey }) {
       return `${minutes}m ${seconds}s`
     }
     return `${seconds}s`
-  }
-
-  function updateTicketStatus(ticketId, newStatus) {
-    const storedTickets = getTickets()
-    const ticket = storedTickets.find((t) => t.id === ticketId)
-    
-    if (ticket) {
-      ticket.status = newStatus
-      // Guardar cuándo se atendió el ticket
-      if (newStatus === 'Em andamento' && !ticket.attendedAt) {
-        ticket.attendedAt = new Date().toISOString()
-      }
-      // Guardar cuándo se concluyó el ticket
-      if (newStatus === 'Concluído') {
-        ticket.concludedAt = new Date().toISOString()
-      }
-      saveTickets(storedTickets)
-      setTickets([...storedTickets])
-    }
   }
 
   function getPriorityIcon(priority) {
@@ -177,16 +113,15 @@ function TicketList({ refreshKey }) {
 
   const filteredTickets = useMemo(() => {
     const query = search.trim().toLowerCase()
-    const filtered = tickets.filter((ticket) => {
-      const text = `${ticket.title} ${ticket.area} ${ticket.requester} ${ticket.description}`.toLowerCase()
+    const filtered = localTickets.filter((ticket) => {
+      const text = `${ticket.titulo} ${ticket.area} ${ticket.tecnicoResponsavel} ${ticket.descricao} ${ticket.numeroChamado}`.toLowerCase()
       const matchesSearch = !query || text.includes(query)
       const matchesStatus = statusFilter === 'todos' || ticket.status === statusFilter
-      const matchesPriority = priorityFilter === 'todos' || ticket.priority === priorityFilter
+      const matchesPriority = priorityFilter === 'todos' || ticket.prioridade === priorityFilter
       return matchesSearch && matchesStatus && matchesPriority
     })
-    // Ordenar tickets después de filtrar
     return sortTickets(filtered)
-  }, [priorityFilter, search, statusFilter, tickets])
+  }, [localTickets, priorityFilter, search, statusFilter])
 
   return (
     <section className="tickets-section">
@@ -232,19 +167,19 @@ function TicketList({ refreshKey }) {
           filteredTickets.map((ticket) => {
             const remainingMs = getRemainingMs(ticket)
             const countdownLabel = formatCountdown(remainingMs)
-            const isVencido = remainingMs != null && remainingMs <= 0
+            const isVencido = remainingMs != null && remainingMs <= 0 && ticket.status !== 'Concluído'
             const isWarning = remainingMs != null && remainingMs <= 60 * 60 * 1000 && remainingMs > 0
             const isDanger = remainingMs != null && remainingMs <= 30 * 60 * 1000
 
             return (
               <article
                 key={ticket.id}
-                className={`ticket-card ${ticket.priority} ${isVencido ? 'vencido' : ''} ${isDanger ? 'danger' : isWarning ? 'warning' : ''}`}
+                className={`ticket-card ${ticket.prioridade} ${isVencido ? 'vencido' : ''} ${isDanger ? 'danger' : isWarning ? 'warning' : ''}`}
               >
                 <div className="ticket-header">
                   <div className="ticket-priority">
-                    <span className="priority-icon">{getPriorityIcon(ticket.priority)}</span>
-                    <span className="priority-label">{getPriorityLabel(ticket.priority)}</span>
+                    <span className="priority-icon">{getPriorityIcon(ticket.prioridade)}</span>
+                    <span className="priority-label">{getPriorityLabel(ticket.prioridade)}</span>
                   </div>
                   <div className="ticket-status">
                     <span className={`status-badge status-${ticket.status.toLowerCase().replace(/\s+/g, '-')}`}>
@@ -254,8 +189,8 @@ function TicketList({ refreshKey }) {
                 </div>
 
                 <div className="ticket-content">
-                  <h3 className="ticket-title">{ticket.title || 'Sem título'}</h3>
-                  <p className="ticket-description">{ticket.description || ''}</p>
+                  <h3 className="ticket-title">{ticket.titulo || 'Sem título'}</h3>
+                  <p className="ticket-description">{ticket.descricao || ''}</p>
                 </div>
 
                 <div className="ticket-footer">
@@ -264,7 +199,7 @@ function TicketList({ refreshKey }) {
                       <>
                         <span className="countdown-icon">✓</span>
                         <span className="countdown-text completed">
-                          Durou {formatDuration(ticket.createdAt, ticket.concludedAt, ticket.attendedAt)}
+                          Durou {formatDuration(ticket.dataAbertura, ticket.dataFechamento, ticket.dataAbertura)}
                         </span>
                       </>
                     ) : (
@@ -279,8 +214,8 @@ function TicketList({ refreshKey }) {
 
                   <div className="ticket-meta">
                     <span className="meta-item">{ticket.area || '--'}</span>
-                    <span className="meta-item">{ticket.requester || '--'}</span>
-                    <span className="meta-item meta-date">{formatDate(ticket.createdAt)}</span>
+                    <span className="meta-item">#{ticket.numeroChamado || '--'}</span>
+                    <span className="meta-item meta-date">{formatDate(ticket.dataAbertura)}</span>
                   </div>
 
                   <div className="ticket-actions">
@@ -288,7 +223,7 @@ function TicketList({ refreshKey }) {
                       <button
                         type="button"
                         className="action-btn attend-btn"
-                        onClick={() => updateTicketStatus(ticket.id, 'Em andamento')}
+                        onClick={() => onUpdateStatus?.(ticket.id, 'Em andamento')}
                         title="Marcar como em andamento"
                       >
                         👤 Atender
@@ -298,7 +233,7 @@ function TicketList({ refreshKey }) {
                       <button
                         type="button"
                         className="action-btn complete-btn"
-                        onClick={() => updateTicketStatus(ticket.id, 'Concluído')}
+                        onClick={() => onUpdateStatus?.(ticket.id, 'Concluído')}
                         title="Marcar como concluído"
                       >
                         ✓ Concluir
