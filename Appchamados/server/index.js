@@ -6,7 +6,7 @@ import authRoutes from './routes/auth.routes.js'
 import profileRoutes from './routes/profile.routes.js'
 import settingsRoutes from './routes/settings.routes.js'
 import ticketsRoutes from './routes/tickets.routes.js'
-import { ensureDatabase, getDatabasePath } from './services/database.js'
+import { ensureDatabase, getDatabasePath, isUsingPostgres } from './services/database.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 4000)
@@ -26,10 +26,39 @@ function getAllowedOrigins() {
 
 const allowedOrigins = getAllowedOrigins()
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function createOriginMatcher(origins) {
+  const exactOrigins = new Set()
+  const wildcardMatchers = []
+
+  for (const origin of origins) {
+    if (origin.includes('*')) {
+      const pattern = `^${escapeRegExp(origin).replace(/\\\*/g, '.*')}$`
+      wildcardMatchers.push(new RegExp(pattern))
+      continue
+    }
+
+    exactOrigins.add(origin)
+  }
+
+  return (origin) => {
+    if (exactOrigins.has(origin)) {
+      return true
+    }
+
+    return wildcardMatchers.some((regex) => regex.test(origin))
+  }
+}
+
+const isAllowedOrigin = createOriginMatcher(allowedOrigins)
+
 const corsOptions = {
   credentials: true,
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || isAllowedOrigin(origin)) {
       callback(null, true)
       return
     }
@@ -47,7 +76,7 @@ async function initializeApplication() {
   app.use('/uploads', express.static(path.resolve(process.cwd(), 'public', 'uploads')))
 
   app.get('/api/health', (_, res) => {
-    res.json({ status: 'ok', db: getDatabasePath() })
+    res.json({ status: 'ok', db: getDatabasePath(), driver: isUsingPostgres() ? 'postgres' : 'json' })
   })
 
   app.use('/api/auth', authRoutes)
@@ -64,7 +93,8 @@ async function initializeApplication() {
 
   app.listen(PORT, () => {
     console.log(`Servidor iniciado na porta ${PORT}`)
-    console.log(`Banco JSON pronto em ${getDatabasePath()}`)
+    console.log(`Banco pronto em ${getDatabasePath()}`)
+    console.log(`Driver de persistencia: ${isUsingPostgres() ? 'PostgreSQL' : 'JSON local'}`)
     console.log(`CORS liberado para: ${allowedOrigins.join(', ')}`)
   })
 }

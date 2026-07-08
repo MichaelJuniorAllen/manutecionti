@@ -22,9 +22,24 @@ Serviços padrão:
 - Frontend: `http://localhost:5173`
 - API: `http://localhost:4000`
 
-## Banco local automático
+## Persistência de dados
 
-No início da aplicação, o backend verifica automaticamente `server/data/database.json` e cria o arquivo com a estrutura inicial se não existir.
+O backend suporta dois modos:
+
+- `PostgreSQL` quando `DATABASE_URL` estiver configurada (recomendado para produção)
+- `JSON local` como fallback quando `DATABASE_URL` não estiver definida (útil para desenvolvimento)
+
+No modo local, a aplicação cria automaticamente `server/data/database.json` se o arquivo não existir.
+
+### Migrar dados locais para PostgreSQL
+
+Depois de configurar `DATABASE_URL`, execute:
+
+```bash
+npm run migrate:json-to-postgres
+```
+
+Esse comando copia os dados atuais de `server/data/database.json` para PostgreSQL (tabela `app_state`).
 
 ## SMTP para confirmação de e-mail
 
@@ -47,7 +62,9 @@ No serviço do backend, configure as variáveis:
 - `PORT=4000` (ou a porta do provedor)
 - `JWT_SECRET=seu_segredo_forte`
 - `JWT_EXPIRES_IN=8h`
-- `CORS_ORIGINS=https://SEU-SITE.netlify.app`
+- `CORS_ORIGINS=https://SEU-SITE.netlify.app,https://*.netlify.app`
+- `DATABASE_URL=postgresql://USER:PASS@HOST:5432/DBNAME`
+- `PGSSL=true`
 - SMTP (opcional): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
 
 Após deploy, copie a URL pública da API, por exemplo:
@@ -74,5 +91,6 @@ Este repositório já inclui fallback de SPA:
 2. Crie um chamado como visitante.
 3. Faça login e abra “Meu Histórico”.
 4. Verifique no backend se CORS aceita seu domínio Netlify.
+5. Verifique `GET /api/health` e confirme `driver: "postgres"`.
 
 Se o frontend carregar e as chamadas de API responderem 200/401/403 corretamente (sem erro de CORS), o deploy está estável.
