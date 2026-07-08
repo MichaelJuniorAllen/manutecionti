@@ -1,6 +1,9 @@
 [build]
-command = "npm run build"
+command = "npm ci && npm run build"
 publish = "dist"
+
+[build.environment]
+VITE_API_URL = "https://manutecionti.onrender.com/api"
 
 # SPA fallback: any non-file route serves index.html
 [[redirects]]
