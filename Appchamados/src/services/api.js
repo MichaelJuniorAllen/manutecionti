@@ -1,6 +1,19 @@
 const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : '/api')
 const TOKEN_KEY = 'chamados_token'
 
+function getApiBaseUrl() {
+  if (API_BASE.startsWith('http://') || API_BASE.startsWith('https://')) {
+    return API_BASE
+  }
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  if (!origin) {
+    return API_BASE
+  }
+
+  return `${origin}${API_BASE.startsWith('/') ? API_BASE : `/${API_BASE}`}`
+}
+
 export function getStoredToken() {
   return localStorage.getItem(TOKEN_KEY)
 }
@@ -93,6 +106,15 @@ export const api = {
     },
     actions() {
       return request('/tickets/history/actions')
+    },
+    streamUrl() {
+      const token = getStoredToken()
+      if (!token) {
+        return null
+      }
+
+      const baseUrl = getApiBaseUrl()
+      return `${baseUrl}/tickets/stream?token=${encodeURIComponent(token)}`
     },
   },
   settings: {

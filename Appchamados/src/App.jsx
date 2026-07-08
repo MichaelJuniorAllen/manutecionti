@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import './App.css'
 import HomePage from './components/HomePage'
 import Stats from './components/Stats'
@@ -85,9 +87,7 @@ function App() {
         </div>
 
         <div className="top-actions">
-          {!isAuthenticated ? (
-            <Link className="secondary auth-link" to="/autenticacao">Entrar</Link>
-          ) : (
+          {isAuthenticated ? (
             <ProfileMenu
               user={user}
               open={menuOpen}
@@ -95,7 +95,7 @@ function App() {
               onClose={() => setMenuOpen(false)}
               onLogout={handleLogout}
             />
-          )}
+          ) : null}
         </div>
       </header>
 
@@ -112,7 +112,11 @@ function App() {
           path="/historico"
           element={(
             <ProtectedRoute>
-              <HistoryPage onNotify={notify} />
+              <HistoryPage
+                onNotify={notify}
+                currentUserId={user?.id || ''}
+                currentUserName={user?.nome || ''}
+              />
             </ProtectedRoute>
           )}
         />
@@ -128,7 +132,7 @@ function App() {
           path="/meu-historico"
           element={(
             <ProtectedRoute>
-              <MyHistoryPage onNotify={notify} />
+              <MyHistoryPage onNotify={notify} currentUserName={user?.nome || ''} />
             </ProtectedRoute>
           )}
         />
@@ -174,30 +178,111 @@ function NewTicketPage({ onNotify }) {
   return <TicketForm onSubmitTicket={handleSubmitTicket} onNavigate={(path) => navigate(path)} />
 }
 
-function HistoryPage({ onNotify }) {
+function HistoryPage({ onNotify, currentUserId, currentUserName }) {
   const [tickets, setTickets] = useState([])
+  const [todayTickets, setTodayTickets] = useState([])
   const [loading, setLoading] = useState(true)
 
-  async function loadTickets() {
-    try {
-      setLoading(true)
-      const result = await api.tickets.mine()
-      setTickets(result.tickets || [])
-    } catch (error) {
-      onNotify('error', error.message)
-    } finally {
-      setLoading(false)
-    }
+  function getOpenAndInProgress(items) {
+    return (items || []).filter((ticket) => ticket.status !== 'Concluído')
   }
+
+  function isSameLocalDay(dateValue) {
+    if (!dateValue) return false
+    const date = new Date(dateValue)
+    if (Number.isNaN(date.getTime())) return false
+    const now = new Date()
+    return (
+      date.getFullYear() === now.getFullYear()
+      && date.getMonth() === now.getMonth()
+      && date.getDate() === now.getDate()
+    )
+  }
+
+  const loadTickets = useCallback(async ({ silent = false, notifyOnError = true } = {}) => {
+    try {
+      if (!silent) {
+        setLoading(true)
+      }
+
+      const result = await api.tickets.mine()
+      const allTickets = result.tickets || []
+      setTickets(getOpenAndInProgress(allTickets))
+      setTodayTickets(allTickets.filter((ticket) => isSameLocalDay(ticket.dataAbertura)))
+    } catch (error) {
+      if (notifyOnError) {
+        onNotify('error', error.message)
+      }
+    } finally {
+      if (!silent) {
+        setLoading(false)
+      }
+    }
+  }, [onNotify])
 
   useEffect(() => {
     loadTickets()
-  }, [])
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        loadTickets({ silent: true, notifyOnError: false })
+      }
+    }
+
+    function handleWindowFocus() {
+      loadTickets({ silent: true, notifyOnError: false })
+    }
+
+    window.addEventListener('focus', handleWindowFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [loadTickets])
+
+  useEffect(() => {
+    const streamUrl = api.tickets.streamUrl()
+    if (!streamUrl) {
+      return undefined
+    }
+
+    const eventSource = new EventSource(streamUrl)
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data || '{}')
+        if (payload?.type === 'ticket-created' || payload?.type === 'ticket-updated') {
+          loadTickets({ silent: true, notifyOnError: false })
+        }
+      } catch {
+        // Ignore malformed events and keep stream connected.
+      }
+    }
+
+    eventSource.onerror = () => {
+      // EventSource reconecta automaticamente; não mostrar erro para evitar ruído.
+    }
+
+    return () => {
+      eventSource.close()
+    }
+  }, [loadTickets])
 
   async function handleUpdateStatus(ticketId, status) {
     try {
-      await api.tickets.updateStatus(ticketId, { status })
-      onNotify('success', 'Status atualizado com sucesso.')
+      const payload = { status }
+      if (status === 'Em andamento' && currentUserName) {
+        payload.tecnicoResponsavel = currentUserName
+      }
+
+      await api.tickets.updateStatus(ticketId, payload)
+      if (status === 'Concluído') {
+        onNotify('success', 'Chamado concluído e enviado para o seu histórico.')
+      } else {
+        onNotify('success', 'Status atualizado com sucesso.')
+      }
       await loadTickets()
     } catch (error) {
       onNotify('error', error.message)
@@ -210,8 +295,13 @@ function HistoryPage({ onNotify }) {
 
   return (
     <>
-      <Stats tickets={tickets} />
-      <TicketList tickets={tickets} onUpdateStatus={handleUpdateStatus} />
+      <Stats tickets={todayTickets} />
+      <TicketList
+        tickets={tickets}
+        onUpdateStatus={handleUpdateStatus}
+        currentUserId={currentUserId}
+        currentUserName={currentUserName}
+      />
     </>
   )
 }
@@ -342,28 +432,40 @@ function ProfilePage({ user, onNotify, onRefreshUser }) {
   )
 }
 
-function MyHistoryPage({ onNotify }) {
+function MyHistoryPage({ onNotify, currentUserName }) {
   const [tickets, setTickets] = useState([])
   const [allTickets, setAllTickets] = useState([])
   const [filters, setFilters] = useState({
     month: '',
     year: '',
-    status: 'todos',
+    status: 'Concluído',
     priority: 'todos',
     area: 'todos',
-    responsible: 'todos',
+    responsible: currentUserName || 'todos',
     search: '',
   })
 
   useEffect(() => {
+    const initialFilters = {
+      month: '',
+      year: '',
+      status: 'Concluído',
+      priority: 'todos',
+      area: 'todos',
+      responsible: currentUserName || 'todos',
+      search: '',
+    }
+
+    setFilters(initialFilters)
+
     api.tickets
-      .mine()
+      .mine(initialFilters)
       .then((result) => {
         setTickets(result.tickets || [])
         setAllTickets(result.tickets || [])
       })
       .catch((error) => onNotify('error', error.message))
-  }, [])
+  }, [currentUserName])
 
   async function applyFilters(nextFilters) {
     try {
@@ -382,6 +484,80 @@ function MyHistoryPage({ onNotify }) {
 
   const areaOptions = [...new Set(allTickets.map((ticket) => ticket.area))]
   const responsibleOptions = [...new Set(allTickets.map((ticket) => ticket.tecnicoResponsavel))]
+
+  function formatDateForPdf(value) {
+    if (!value) return '--'
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return '--'
+    return parsed.toLocaleString('pt-BR')
+  }
+
+  function formatResolutionForPdf(minutes) {
+    if (!Number.isFinite(minutes) || minutes < 0) return '--'
+    if (minutes >= 60) {
+      const h = Math.floor(minutes / 60)
+      const m = minutes % 60
+      return `${h}h ${m}min`
+    }
+    return `${minutes} min`
+  }
+
+  function exportHistoryPdf() {
+    if (!tickets.length) {
+      onNotify('warning', 'Não há chamados para exportar no filtro atual.')
+      return
+    }
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+    const generatedAt = new Date().toLocaleString('pt-BR')
+
+    doc.setFontSize(16)
+    doc.text('Meu Historico de Chamados', 14, 14)
+    doc.setFontSize(10)
+    doc.text(`Usuario: ${currentUserName || 'N/A'}`, 14, 20)
+    doc.text(`Gerado em: ${generatedAt}`, 14, 25)
+
+    autoTable(doc, {
+      startY: 30,
+      head: [[
+        'Numero',
+        'Abertura',
+        'Area',
+        'Prioridade',
+        'Status',
+        'Tecnico',
+        'Fechamento',
+        'Tempo total',
+        'Observacoes',
+      ]],
+      body: tickets.map((ticket) => ([
+        ticket.numeroChamado || '--',
+        formatDateForPdf(ticket.dataAbertura),
+        ticket.area || '--',
+        ticket.prioridade || '--',
+        ticket.status || '--',
+        ticket.tecnicoResponsavel || '--',
+        formatDateForPdf(ticket.dataFechamento),
+        formatResolutionForPdf(ticket.tempoResolucao),
+        ticket.observacoes || '--',
+      ])),
+      styles: {
+        fontSize: 8,
+        cellPadding: 2.2,
+      },
+      headStyles: {
+        fillColor: [35, 104, 162],
+      },
+      alternateRowStyles: {
+        fillColor: [244, 246, 241],
+      },
+      margin: { left: 10, right: 10 },
+    })
+
+    const safeDate = new Date().toISOString().slice(0, 10)
+    doc.save(`historico-chamados-${safeDate}.pdf`)
+    onNotify('success', 'PDF do histórico gerado com sucesso.')
+  }
 
   return (
     <section className="history-page">
@@ -436,6 +612,16 @@ function MyHistoryPage({ onNotify }) {
       </div>
 
       <MyHistoryTable tickets={tickets} />
+
+      <button
+        type="button"
+        className="history-export-fab"
+        onClick={exportHistoryPdf}
+        title="Baixar PDF do histórico"
+        aria-label="Baixar PDF do histórico"
+      >
+        PDF
+      </button>
     </section>
   )
 }

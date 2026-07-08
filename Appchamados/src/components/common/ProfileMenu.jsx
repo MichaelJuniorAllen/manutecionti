@@ -18,7 +18,9 @@ function ProfileMenu({ user, open, onToggle, onClose, onLogout }) {
             </div>
           </div>
           <nav className="profile-links">
+            <Link to="/" onClick={onClose}>Sistema de Chamados</Link>
             <Link to="/perfil" onClick={onClose}>Meu Perfil</Link>
+            <Link to="/historico" onClick={onClose}>Histórico de Chamados</Link>
             <Link to="/meu-historico" onClick={onClose}>Meu Histórico</Link>
             <Link to="/configuracoes" onClick={onClose}>Configurações</Link>
             <Link to="/alterar-senha" onClick={onClose}>Alterar Senha</Link>

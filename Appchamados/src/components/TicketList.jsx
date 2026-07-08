@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatDate, getRemainingMs } from '../utils/tickets'
 
-function TicketList({ tickets = [], onUpdateStatus }) {
+function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentUserName = '' }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [priorityFilter, setPriorityFilter] = useState('todos')
@@ -111,6 +111,26 @@ function TicketList({ tickets = [], onUpdateStatus }) {
     return labels[priority] || priority
   }
 
+  function getAttendantAvatar(ticket) {
+    if (!ticket?.atendenteFotoPerfil) return null
+    if (ticket.atendenteFotoPerfil.startsWith('http')) {
+      return ticket.atendenteFotoPerfil
+    }
+    return `${import.meta.env.VITE_SERVER_URL || 'http://localhost:4000'}${ticket.atendenteFotoPerfil}`
+  }
+
+  function getInitials(name = '') {
+    const parts = name.trim().split(/\s+/).filter(Boolean)
+    if (!parts.length) return 'AT'
+    const first = parts[0]?.[0] || ''
+    const last = parts.length > 1 ? parts[parts.length - 1]?.[0] || '' : ''
+    return `${first}${last}`.toUpperCase()
+  }
+
+  function normalize(value = '') {
+    return String(value).trim().toLowerCase()
+  }
+
   const filteredTickets = useMemo(() => {
     const query = search.trim().toLowerCase()
     const filtered = localTickets.filter((ticket) => {
@@ -170,6 +190,16 @@ function TicketList({ tickets = [], onUpdateStatus }) {
             const isVencido = remainingMs != null && remainingMs <= 0 && ticket.status !== 'Concluído'
             const isWarning = remainingMs != null && remainingMs <= 60 * 60 * 1000 && remainingMs > 0
             const isDanger = remainingMs != null && remainingMs <= 30 * 60 * 1000
+            const attendantName = ticket.atendenteNome || ticket.tecnicoResponsavel || 'Não atribuído'
+            const attendantAvatar = getAttendantAvatar(ticket)
+            const hasAttendantId = Boolean(ticket.atendenteId)
+            const legacyResponsible = normalize(ticket.tecnicoResponsavel)
+            const currentName = normalize(currentUserName)
+            const hasSpecificLegacyResponsible = legacyResponsible && legacyResponsible !== normalize('Não atribuído')
+            const legacyCanConclude = !hasSpecificLegacyResponsible || legacyResponsible === currentName
+            const canConclude = hasAttendantId
+              ? String(ticket.atendenteId) === String(currentUserId)
+              : legacyCanConclude
 
             return (
               <article
@@ -187,6 +217,17 @@ function TicketList({ tickets = [], onUpdateStatus }) {
                     </span>
                   </div>
                 </div>
+
+                {ticket.status === 'Em andamento' && (
+                  <div className="attendant-chip" title={`Atendendo: ${attendantName}`}>
+                    {attendantAvatar ? (
+                      <img src={attendantAvatar} alt={attendantName} className="attendant-avatar" />
+                    ) : (
+                      <span className="attendant-avatar fallback">{getInitials(attendantName)}</span>
+                    )}
+                    <span className="attendant-label">Em atendimento por {attendantName}</span>
+                  </div>
+                )}
 
                 <div className="ticket-content">
                   <h3 className="ticket-title">{ticket.titulo || 'Sem título'}</h3>
@@ -233,10 +274,11 @@ function TicketList({ tickets = [], onUpdateStatus }) {
                       <button
                         type="button"
                         className="action-btn complete-btn"
+                        disabled={!canConclude}
                         onClick={() => onUpdateStatus?.(ticket.id, 'Concluído')}
-                        title="Marcar como concluído"
+                        title={canConclude ? 'Marcar como concluído' : 'Somente quem está atendendo pode concluir'}
                       >
-                        ✓ Concluir
+                        {canConclude ? '✓ Concluir' : '🔒 Somente atendente'}
                       </button>
                     )}
                     {ticket.status === 'Concluído' && (

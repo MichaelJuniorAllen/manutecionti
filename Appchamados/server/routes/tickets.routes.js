@@ -1,5 +1,6 @@
 import express from 'express'
 import { optionalAuth, requireAuth } from '../middleware/auth.js'
+import { verifyToken } from '../services/auth.js'
 import { createTicketNumber, mutateDatabase, nextNumericId, nowIso, readDatabase } from '../services/database.js'
 
 const router = express.Router()
@@ -11,6 +12,8 @@ const priorityToMinutes = {
   baixa: 1440,
 }
 
+const streamClients = new Set()
+
 function normalize(value = '') {
   return value.trim().toLowerCase()
 }
@@ -21,6 +24,36 @@ function computeResolutionMinutes(startIso, endIso) {
   const end = new Date(endIso).getTime()
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null
   return Math.round((end - start) / 60000)
+}
+
+function createHttpError(statusCode, message) {
+  const error = new Error(message)
+  error.statusCode = statusCode
+  return error
+}
+
+function sendStreamEvent(res, payload) {
+  res.write(`data: ${JSON.stringify(payload)}\n\n`)
+}
+
+function broadcastTicketEvent(payload) {
+  for (const client of streamClients) {
+    try {
+      sendStreamEvent(client, payload)
+    } catch {
+      streamClients.delete(client)
+    }
+  }
+}
+
+async function resolveUserFromStreamToken(token) {
+  const payload = verifyToken(token)
+  const db = await readDatabase()
+  const user = db.usuarios.find((item) => item.id === payload.sub)
+  if (!user) {
+    throw new Error('Usuário não encontrado para esta sessão.')
+  }
+  return user
 }
 
 function toTicketResponse(ticket) {
@@ -39,6 +72,10 @@ function toTicketResponse(ticket) {
     titulo: ticket.titulo,
     descricao: ticket.descricao,
     dueAt: ticket.due_at,
+    atendenteId: ticket.atendente_id || null,
+    atendenteNome: ticket.atendente_nome || null,
+    atendenteFotoPerfil: ticket.atendente_foto_perfil || null,
+    dataAtendimento: ticket.data_atendimento || null,
   }
 }
 
@@ -85,6 +122,10 @@ router.post('/', optionalAuth, async (req, res) => {
         tempo_resolucao: null,
         observacoes: payload.observacoes,
         due_at: dueAt,
+        atendente_id: null,
+        atendente_nome: null,
+        atendente_foto_perfil: null,
+        data_atendimento: null,
       }
 
       db.chamados.unshift(ticket)
@@ -100,17 +141,63 @@ router.post('/', optionalAuth, async (req, res) => {
       created = toTicketResponse(ticket)
     })
 
+    broadcastTicketEvent({
+      type: 'ticket-created',
+      ticketId: created?.id || null,
+      timestamp: nowIso(),
+    })
+
     return res.status(201).json({ message: 'Chamado aberto com sucesso.', ticket: created })
   } catch (error) {
     return res.status(500).json({ message: error.message || 'Erro ao abrir chamado.' })
   }
 })
 
+router.get('/stream', async (req, res) => {
+  const queryToken = typeof req.query.token === 'string' ? req.query.token : ''
+  const authHeader = req.headers.authorization || ''
+  const headerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+  const token = queryToken || headerToken
+
+  if (!token) {
+    return res.status(401).json({ message: 'Sessão inválida. Faça login novamente.' })
+  }
+
+  try {
+    await resolveUserFromStreamToken(token)
+  } catch {
+    return res.status(401).json({ message: 'Token expirado ou inválido.' })
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.flushHeaders?.()
+
+  sendStreamEvent(res, { type: 'connected', timestamp: nowIso() })
+  streamClients.add(res)
+
+  const keepAlive = setInterval(() => {
+    try {
+      res.write(': ping\n\n')
+    } catch {
+      clearInterval(keepAlive)
+      streamClients.delete(res)
+    }
+  }, 25000)
+
+  req.on('close', () => {
+    clearInterval(keepAlive)
+    streamClients.delete(res)
+  })
+
+  return undefined
+})
+
 router.use(requireAuth)
 
 router.get('/my', async (req, res) => {
   const db = await readDatabase()
-  const userId = req.auth.user.id
 
   const {
     month,
@@ -123,7 +210,6 @@ router.get('/my', async (req, res) => {
   } = req.query
 
   const filtered = db.chamados
-    .filter((item) => item.usuario_id === userId)
     .filter((item) => {
       if (month) {
         const currentMonth = new Date(item.data_abertura).getMonth() + 1
@@ -160,9 +246,44 @@ router.patch('/:id/status', async (req, res) => {
   try {
     let updated
     await mutateDatabase(async (db) => {
-      const ticket = db.chamados.find((item) => item.id === ticketId && item.usuario_id === req.auth.user.id)
+      const ticket = db.chamados.find((item) => item.id === ticketId)
       if (!ticket) {
-        throw new Error('Chamado não encontrado.')
+        throw createHttpError(404, 'Chamado não encontrado.')
+      }
+
+      if (status === 'Em andamento') {
+        if (ticket.atendente_id && ticket.atendente_id !== req.auth.user.id) {
+          throw createHttpError(403, `Este chamado já está sendo atendido por ${ticket.atendente_nome || 'outro usuário'}.`)
+        }
+
+        ticket.atendente_id = req.auth.user.id
+        ticket.atendente_nome = req.auth.user.nome
+        ticket.atendente_foto_perfil = req.auth.user.foto_perfil || null
+        ticket.data_atendimento = ticket.data_atendimento || nowIso()
+        ticket.tecnico_responsavel = req.auth.user.nome
+      }
+
+      if (status === 'Concluído') {
+        if (!ticket.atendente_id) {
+          const technicianName = normalize(ticket.tecnico_responsavel || '')
+          const currentUserName = normalize(req.auth.user.nome || '')
+          const hasSpecificTechnician = technicianName && technicianName !== normalize('Não atribuído')
+
+          if (hasSpecificTechnician && technicianName !== currentUserName) {
+            throw createHttpError(403, `Apenas ${ticket.tecnico_responsavel} pode concluir este chamado.`)
+          }
+
+          // Compatibilidade com chamados antigos: vincula o atendente no momento da conclusão.
+          ticket.atendente_id = req.auth.user.id
+          ticket.atendente_nome = req.auth.user.nome
+          ticket.atendente_foto_perfil = req.auth.user.foto_perfil || null
+          ticket.data_atendimento = ticket.data_atendimento || nowIso()
+          ticket.tecnico_responsavel = req.auth.user.nome
+        }
+
+        if (ticket.atendente_id !== req.auth.user.id) {
+          throw createHttpError(403, `Apenas ${ticket.atendente_nome || 'o atendente responsável'} pode concluir este chamado.`)
+        }
       }
 
       ticket.status = status
@@ -175,7 +296,7 @@ router.patch('/:id/status', async (req, res) => {
 
       if (status === 'Concluído') {
         ticket.data_fechamento = nowIso()
-        ticket.tempo_resolucao = computeResolutionMinutes(ticket.data_abertura, ticket.data_fechamento)
+        ticket.tempo_resolucao = computeResolutionMinutes(ticket.data_atendimento || ticket.data_abertura, ticket.data_fechamento)
       }
 
       db.historico.unshift({
@@ -190,9 +311,16 @@ router.patch('/:id/status', async (req, res) => {
       updated = toTicketResponse(ticket)
     })
 
+    broadcastTicketEvent({
+      type: 'ticket-updated',
+      ticketId: updated?.id || ticketId,
+      status: updated?.status || status,
+      timestamp: nowIso(),
+    })
+
     return res.json({ message: 'Status atualizado com sucesso.', ticket: updated })
   } catch (error) {
-    return res.status(404).json({ message: error.message || 'Não foi possível atualizar o chamado.' })
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Não foi possível atualizar o chamado.' })
   }
 })
 

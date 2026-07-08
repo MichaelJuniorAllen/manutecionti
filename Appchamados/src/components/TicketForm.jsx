@@ -35,7 +35,7 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
       setMessage('Seu chamado foi aberto com sucesso!')
 
       window.setTimeout(() => {
-        onNavigate?.('/historico')
+        onNavigate?.('/')
       }, 1200)
     } catch (error) {
       setMessage(error.message || 'Não foi possível registrar o chamado.')
