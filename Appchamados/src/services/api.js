@@ -33,6 +33,9 @@ async function request(path, options = {}) {
   if (!options.formData) {
     headers.set('Content-Type', 'application/json')
   }
+  headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
+  headers.set('Pragma', 'no-cache')
+  headers.set('Expires', '0')
 
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
@@ -41,12 +44,28 @@ async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method || 'GET',
     headers,
+    cache: 'no-store',
     body: options.formData ? options.body : options.body ? JSON.stringify(options.body) : undefined,
   })
 
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(data.message || 'Erro ao processar requisição.')
+    let friendlyMessage = data.message || 'Erro ao processar requisição.'
+
+    if (response.status === 401) {
+      const message = String(data.message || '').toLowerCase()
+      const isSessionError = message.includes('token expirado')
+        || message.includes('sessão inválida')
+        || message.includes('sessao invalida')
+        || message.includes('token expirado ou inválido')
+
+      if (isSessionError) {
+        setStoredToken(null)
+        friendlyMessage = 'Sua sessão expirou. Faça login novamente para continuar.'
+      }
+    }
+
+    throw new Error(friendlyMessage)
   }
 
   return data
@@ -74,6 +93,9 @@ export const api = {
     update(formData) {
       return request('/profile/me', { method: 'PUT', body: formData, formData: true })
     },
+    updateEmails(payload) {
+      return request('/profile/emails', { method: 'PUT', body: payload })
+    },
     requestEmailChange(newEmail) {
       return request('/profile/request-email-change', { method: 'POST', body: { newEmail } })
     },
@@ -95,6 +117,7 @@ export const api = {
           query.set(key, String(value))
         }
       })
+      query.set('_ts', String(Date.now()))
       const suffix = query.toString() ? `?${query.toString()}` : ''
       return request(`/tickets/my${suffix}`)
     },

@@ -33,7 +33,9 @@ export function sanitizeUser(user) {
   return {
     id: user.id,
     nome: user.nome,
+    funcao: user.funcao || 'Manutenção TI',
     email: user.email,
+    email_reserva: user.email_reserva || null,
     telefone: user.telefone,
     foto_perfil: user.foto_perfil || null,
     data_cadastro: user.data_cadastro,

@@ -26,6 +26,11 @@ function computeResolutionMinutes(startIso, endIso) {
   return Math.round((end - start) / 60000)
 }
 
+function getTicketTotalResolutionMinutes(ticket) {
+  if (!ticket?.data_fechamento) return null
+  return computeResolutionMinutes(ticket.data_abertura, ticket.data_fechamento)
+}
+
 function createHttpError(statusCode, message) {
   const error = new Error(message)
   error.statusCode = statusCode
@@ -57,6 +62,8 @@ async function resolveUserFromStreamToken(token) {
 }
 
 function toTicketResponse(ticket) {
+  const totalResolution = getTicketTotalResolutionMinutes(ticket)
+
   return {
     id: ticket.id,
     numeroChamado: ticket.numero_chamado,
@@ -66,7 +73,7 @@ function toTicketResponse(ticket) {
     status: ticket.status,
     tecnicoResponsavel: ticket.tecnico_responsavel,
     dataFechamento: ticket.data_fechamento,
-    tempoResolucao: ticket.tempo_resolucao,
+    tempoResolucao: totalResolution,
     observacoes: ticket.observacoes,
     solicitante: ticket.solicitante,
     titulo: ticket.titulo,
@@ -200,6 +207,7 @@ router.get('/my', async (req, res) => {
   const db = await readDatabase()
 
   const {
+    day,
     month,
     year,
     status,
@@ -211,14 +219,21 @@ router.get('/my', async (req, res) => {
 
   const filtered = db.chamados
     .filter((item) => {
-      if (month) {
-        const currentMonth = new Date(item.data_abertura).getMonth() + 1
-        if (Number(month) !== currentMonth) return false
-      }
-      if (year) {
-        const currentYear = new Date(item.data_abertura).getFullYear()
-        if (Number(year) !== currentYear) return false
-      }
+      const openedAt = new Date(item.data_abertura)
+      if (Number.isNaN(openedAt.getTime())) return false
+
+      const dayNumber = Number(day)
+      const monthNumber = Number(month)
+      const yearNumber = Number(year)
+
+      const hasDay = Number.isFinite(dayNumber) && dayNumber >= 1 && dayNumber <= 31
+      const hasMonth = Number.isFinite(monthNumber) && monthNumber >= 1 && monthNumber <= 12
+      const hasYear = Number.isFinite(yearNumber) && yearNumber >= 1900
+
+      if (hasDay && openedAt.getDate() !== dayNumber) return false
+      if (hasMonth && openedAt.getMonth() + 1 !== monthNumber) return false
+      if (hasYear && openedAt.getFullYear() !== yearNumber) return false
+
       if (status && status !== 'todos' && item.status !== status) return false
       if (priority && priority !== 'todos' && item.prioridade !== priority) return false
       if (area && area !== 'todos' && normalize(item.area) !== normalize(area)) return false
@@ -296,7 +311,7 @@ router.patch('/:id/status', async (req, res) => {
 
       if (status === 'Concluído') {
         ticket.data_fechamento = nowIso()
-        ticket.tempo_resolucao = computeResolutionMinutes(ticket.data_atendimento || ticket.data_abertura, ticket.data_fechamento)
+        ticket.tempo_resolucao = computeResolutionMinutes(ticket.data_abertura, ticket.data_fechamento)
       }
 
       db.historico.unshift({
@@ -342,7 +357,7 @@ router.get('/dashboard/me', async (req, res) => {
   const pending = userTickets.filter((ticket) => ticket.status === 'Em andamento').length
 
   const resolutionTimes = userTickets
-    .map((ticket) => ticket.tempo_resolucao)
+    .map((ticket) => getTicketTotalResolutionMinutes(ticket))
     .filter((value) => Number.isFinite(value) && value > 0)
 
   const avgResolution = resolutionTimes.length

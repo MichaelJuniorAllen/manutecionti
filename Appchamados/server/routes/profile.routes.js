@@ -44,12 +44,29 @@ router.get('/me', requireAuth, async (req, res) => {
 })
 
 router.put('/me', requireAuth, upload.single('foto'), async (req, res) => {
+  const hasNomeField = Object.prototype.hasOwnProperty.call(req.body, 'nome')
+  const hasTelefoneField = Object.prototype.hasOwnProperty.call(req.body, 'telefone')
+  const hasFuncaoField = Object.prototype.hasOwnProperty.call(req.body, 'funcao')
+
   const nome = (req.body.nome || '').trim()
   const telefone = normalizePhone(req.body.telefone)
+  const funcao = (req.body.funcao || '').trim()
   const senha = req.body.senha || ''
 
-  if (!nome || !telefone) {
-    return res.status(400).json({ message: 'Nome e telefone são obrigatórios.' })
+  if (!hasNomeField && !hasTelefoneField && !hasFuncaoField && !senha && !req.file) {
+    return res.status(400).json({ message: 'Nenhum dado foi enviado para atualização.' })
+  }
+
+  if (hasNomeField && !nome) {
+    return res.status(400).json({ message: 'Nome não pode ficar vazio.' })
+  }
+
+  if (hasTelefoneField && !telefone) {
+    return res.status(400).json({ message: 'Telefone inválido.' })
+  }
+
+  if (hasFuncaoField && !funcao) {
+    return res.status(400).json({ message: 'Função não pode ficar vazia.' })
   }
 
   let resultUser
@@ -57,14 +74,22 @@ router.put('/me', requireAuth, upload.single('foto'), async (req, res) => {
   try {
     await mutateDatabase(async (db) => {
       const user = db.usuarios.find((item) => item.id === req.auth.user.id)
-      const phoneInUse = db.usuarios.some((item) => item.id !== user.id && normalizePhone(item.telefone) === telefone)
-
-      if (phoneInUse) {
-        throw new Error('Telefone já utilizado por outro usuário.')
+      if (hasTelefoneField) {
+        const phoneInUse = db.usuarios.some((item) => item.id !== user.id && normalizePhone(item.telefone) === telefone)
+        if (phoneInUse) {
+          throw new Error('Telefone já utilizado por outro usuário.')
+        }
       }
 
-      user.nome = nome
-      user.telefone = telefone
+      if (hasNomeField) {
+        user.nome = nome
+      }
+      if (hasTelefoneField) {
+        user.telefone = telefone
+      }
+      if (hasFuncaoField) {
+        user.funcao = funcao
+      }
       if (req.file) {
         user.foto_perfil = `/uploads/profiles/${req.file.filename}`
       }
@@ -82,6 +107,51 @@ router.put('/me', requireAuth, upload.single('foto'), async (req, res) => {
     return res.json({ message: 'Perfil atualizado com sucesso.', user: resultUser })
   } catch (error) {
     return res.status(400).json({ message: error.message || 'Erro ao atualizar perfil.' })
+  }
+})
+
+router.put('/emails', requireAuth, async (req, res) => {
+  const email = normalizeEmail(req.body.email)
+  const emailReserva = normalizeEmail(req.body.emailReserva)
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ message: 'Informe um e-mail principal válido.' })
+  }
+
+  if (emailReserva && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailReserva)) {
+    return res.status(400).json({ message: 'Informe um e-mail de reserva válido.' })
+  }
+
+  if (emailReserva && emailReserva === email) {
+    return res.status(400).json({ message: 'O e-mail de reserva deve ser diferente do e-mail principal.' })
+  }
+
+  let updated
+
+  try {
+    await mutateDatabase(async (db) => {
+      const user = db.usuarios.find((item) => item.id === req.auth.user.id)
+      const emailInUse = db.usuarios.some((item) => item.id !== user.id && normalizeEmail(item.email) === email)
+      if (emailInUse) {
+        throw new Error('E-mail principal já em uso por outro usuário.')
+      }
+
+      const reserveInUse = emailReserva
+        ? db.usuarios.some((item) => item.id !== user.id && normalizeEmail(item.email) === emailReserva)
+        : false
+
+      if (reserveInUse) {
+        throw new Error('E-mail de reserva já em uso como e-mail principal de outro usuário.')
+      }
+
+      user.email = email
+      user.email_reserva = emailReserva || null
+      updated = sanitizeUser(user)
+    })
+
+    return res.json({ message: 'E-mails atualizados com sucesso.', user: updated })
+  } catch (error) {
+    return res.status(400).json({ message: error.message || 'Não foi possível atualizar os e-mails.' })
   }
 })
 

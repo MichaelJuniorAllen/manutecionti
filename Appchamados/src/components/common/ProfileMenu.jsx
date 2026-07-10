@@ -14,7 +14,7 @@ function ProfileMenu({ user, open, onToggle, onClose, onLogout }) {
             <Avatar user={user} size={52} />
             <div>
               <strong>{user?.nome}</strong>
-              <p>{user?.email}</p>
+              <p>{user?.funcao || 'Manutenção TI'}</p>
             </div>
           </div>
           <nav className="profile-links">
@@ -23,7 +23,6 @@ function ProfileMenu({ user, open, onToggle, onClose, onLogout }) {
             <Link to="/historico" onClick={onClose}>Histórico de Chamados</Link>
             <Link to="/meu-historico" onClick={onClose}>Meu Histórico</Link>
             <Link to="/configuracoes" onClick={onClose}>Configurações</Link>
-            <Link to="/alterar-senha" onClick={onClose}>Alterar Senha</Link>
             <button type="button" className="logout-menu-btn" onClick={onLogout}>Sair</button>
           </nav>
         </div>
