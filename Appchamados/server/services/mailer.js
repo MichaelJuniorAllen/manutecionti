@@ -5,8 +5,11 @@ const smtpPort = Number(process.env.SMTP_PORT || 587)
 const smtpUser = process.env.SMTP_USER
 const smtpPass = process.env.SMTP_PASS
 const smtpFrom = process.env.SMTP_FROM || smtpUser || 'no-reply@appchamados.local'
+const emailServiceApiKey = process.env.EMAIL_SERVICE_API_KEY || ''
+const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpFrom
 
 const smtpConfigured = Boolean(smtpHost && smtpPort && smtpUser && smtpPass)
+const apiEmailConfigured = Boolean(emailServiceApiKey && emailFromAddress)
 
 const transporter = smtpConfigured
   ? nodemailer.createTransport({
@@ -21,7 +24,43 @@ const transporter = smtpConfigured
   : null
 
 export function isSmtpConfigured() {
-  return smtpConfigured
+  return smtpConfigured || apiEmailConfigured
+}
+
+export function getEmailProviderStatus() {
+  if (apiEmailConfigured) {
+    return { configured: true, provider: 'sendgrid' }
+  }
+
+  if (smtpConfigured) {
+    return { configured: true, provider: 'smtp' }
+  }
+
+  return { configured: false, provider: 'fallback' }
+}
+
+async function sendEmailViaSendGrid({ to, subject, text, html }) {
+  const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${emailServiceApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: to }] }],
+      from: { email: emailFromAddress },
+      subject,
+      content: [
+        { type: 'text/plain', value: text },
+        { type: 'text/html', value: html },
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => '')
+    throw new Error(`Nao foi possivel enviar o codigo por e-mail via API. ${details}`.trim())
+  }
 }
 
 export async function sendEmailChangeCode({ to, userName, code, expiresInMinutes }) {
@@ -29,7 +68,7 @@ export async function sendEmailChangeCode({ to, userName, code, expiresInMinutes
     throw new Error('Dados insuficientes para enviar e-mail de confirmação.')
   }
 
-  if (!smtpConfigured) {
+  if (!apiEmailConfigured && !smtpConfigured) {
     console.log(`[SMTP-FALLBACK] Codigo de confirmacao para ${to}: ${code}`)
     return { mode: 'fallback' }
   }
@@ -56,6 +95,11 @@ export async function sendEmailChangeCode({ to, userName, code, expiresInMinutes
     </div>
   `
 
+  if (apiEmailConfigured) {
+    await sendEmailViaSendGrid({ to, subject, text, html })
+    return { mode: 'sendgrid' }
+  }
+
   try {
     await transporter.sendMail({
       from: smtpFrom,
@@ -67,6 +111,6 @@ export async function sendEmailChangeCode({ to, userName, code, expiresInMinutes
 
     return { mode: 'smtp' }
   } catch {
-    throw new Error('Nao foi possivel enviar o codigo por e-mail. Verifique a configuracao SMTP.')
+    throw new Error('Nao foi possivel enviar o codigo por e-mail. Verifique a configuracao SMTP/API.')
   }
 }

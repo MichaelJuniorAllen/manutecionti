@@ -86,7 +86,7 @@ router.post('/register', upload.single('foto'), async (req, res) => {
       createdUser = {
         id: nextNumericId(mutableDb.usuarios),
         nome,
-        funcao: 'Manutenção TI',
+        funcao: 'TI',
         email,
         email_reserva: null,
         telefone,

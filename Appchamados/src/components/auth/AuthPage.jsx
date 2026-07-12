@@ -23,7 +23,7 @@ function AuthPage({ onNotify }) {
 
   const nextPath = useMemo(() => {
     const params = new URLSearchParams(location.search)
-    return params.get('next') || '/historico'
+    return params.get('next') || '/chamados'
   }, [location.search])
 
   useEffect(() => {

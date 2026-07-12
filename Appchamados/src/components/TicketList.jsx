@@ -46,6 +46,32 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
     }
   }
 
+  function formatElapsed(startAt, endAt = null) {
+    if (!startAt) return '--'
+
+    const start = new Date(startAt).getTime()
+    const end = endAt ? new Date(endAt).getTime() : Date.now()
+
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+      return '--'
+    }
+
+    const durationMs = end - start
+    const hours = Math.floor(durationMs / 3600000)
+    const minutes = Math.floor((durationMs % 3600000) / 60000)
+    const seconds = Math.floor((durationMs % 60000) / 1000)
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${seconds}s`
+    }
+
+    if (minutes > 0) {
+      return `${minutes}m ${seconds}s`
+    }
+
+    return `${seconds}s`
+  }
+
   function sortTickets(ticketsToSort) {
     const priorityOrder = { critica: 1, alta: 2, media: 3, baixa: 4 }
     const statusOrder = { 'Aberto': 1, 'Em andamento': 2, 'Concluído': 3 }
@@ -192,6 +218,12 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
             const isDanger = remainingMs != null && remainingMs <= 30 * 60 * 1000
             const attendantName = ticket.atendenteNome || ticket.tecnicoResponsavel || 'Não atribuído'
             const attendantAvatar = getAttendantAvatar(ticket)
+            const andamentoAoVivo = ticket.status === 'Em andamento'
+              ? formatElapsed(ticket.dataAtendimento)
+              : '--'
+            const andamentoConcluido = ticket.status === 'Concluído'
+              ? formatElapsed(ticket.dataAtendimento, ticket.dataFechamento)
+              : '--'
             const hasAttendantId = Boolean(ticket.atendenteId)
             const legacyResponsible = normalize(ticket.tecnicoResponsavel)
             const currentName = normalize(currentUserName)
@@ -219,14 +251,19 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
                 </div>
 
                 {ticket.status === 'Em andamento' && (
-                  <div className="attendant-chip" title={`Atendendo: ${attendantName}`}>
-                    {attendantAvatar ? (
-                      <img src={attendantAvatar} alt={attendantName} className="attendant-avatar" />
-                    ) : (
-                      <span className="attendant-avatar fallback">{getInitials(attendantName)}</span>
-                    )}
-                    <span className="attendant-label">Em atendimento por {attendantName}</span>
-                  </div>
+                  <>
+                    <div className="attendant-chip" title={`Atendendo: ${attendantName}`}>
+                      {attendantAvatar ? (
+                        <img src={attendantAvatar} alt={attendantName} className="attendant-avatar" />
+                      ) : (
+                        <span className="attendant-avatar fallback">{getInitials(attendantName)}</span>
+                      )}
+                      <span className="attendant-label">Em atendimento por {attendantName}</span>
+                    </div>
+                    <div className="attendant-chip" title="Tempo em andamento">
+                      <span className="attendant-label">Tempo em andamento: {andamentoAoVivo}</span>
+                    </div>
+                  </>
                 )}
 
                 <div className="ticket-content">
@@ -240,7 +277,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
                       <>
                         <span className="countdown-icon">✓</span>
                         <span className="countdown-text completed">
-                          Durou {formatDuration(ticket.dataAbertura, ticket.dataFechamento, ticket.dataAbertura)}
+                          Total {formatDuration(ticket.dataAbertura, ticket.dataFechamento, ticket.dataAtendimento)} | Andamento {andamentoConcluido}
                         </span>
                       </>
                     ) : (

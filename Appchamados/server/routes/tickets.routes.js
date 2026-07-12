@@ -31,6 +31,17 @@ function getTicketTotalResolutionMinutes(ticket) {
   return computeResolutionMinutes(ticket.data_abertura, ticket.data_fechamento)
 }
 
+function getTicketInProgressMinutes(ticket) {
+  if (Number.isFinite(Number(ticket?.tempo_andamento))) {
+    return Number(ticket.tempo_andamento)
+  }
+
+  if (!ticket?.data_atendimento) return null
+
+  const endIso = ticket?.data_fechamento || nowIso()
+  return computeResolutionMinutes(ticket.data_atendimento, endIso)
+}
+
 function createHttpError(statusCode, message) {
   const error = new Error(message)
   error.statusCode = statusCode
@@ -63,6 +74,7 @@ async function resolveUserFromStreamToken(token) {
 
 function toTicketResponse(ticket) {
   const totalResolution = getTicketTotalResolutionMinutes(ticket)
+  const inProgressResolution = getTicketInProgressMinutes(ticket)
 
   return {
     id: ticket.id,
@@ -74,6 +86,7 @@ function toTicketResponse(ticket) {
     tecnicoResponsavel: ticket.tecnico_responsavel,
     dataFechamento: ticket.data_fechamento,
     tempoResolucao: totalResolution,
+    tempoAndamento: inProgressResolution,
     observacoes: ticket.observacoes,
     solicitante: ticket.solicitante,
     titulo: ticket.titulo,
@@ -127,6 +140,7 @@ router.post('/', optionalAuth, async (req, res) => {
         data_abertura: openedAt,
         data_fechamento: null,
         tempo_resolucao: null,
+        tempo_andamento: null,
         observacoes: payload.observacoes,
         due_at: dueAt,
         atendente_id: null,
@@ -312,6 +326,7 @@ router.patch('/:id/status', async (req, res) => {
       if (status === 'Concluído') {
         ticket.data_fechamento = nowIso()
         ticket.tempo_resolucao = computeResolutionMinutes(ticket.data_abertura, ticket.data_fechamento)
+        ticket.tempo_andamento = computeResolutionMinutes(ticket.data_atendimento, ticket.data_fechamento)
       }
 
       db.historico.unshift({

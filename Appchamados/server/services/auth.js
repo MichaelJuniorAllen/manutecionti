@@ -4,6 +4,17 @@ import jwt from 'jsonwebtoken'
 const JWT_SECRET = process.env.JWT_SECRET || 'chamados-secret-dev'
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h'
 
+function normalizeUserRole(value = '') {
+  const role = String(value).trim().toLowerCase()
+
+  if (role === 'ti') return 'TI'
+  if (role === 'manutenção' || role === 'manutencao' || role === 'manutenção ti' || role === 'manutencao ti') {
+    return 'Manutenção'
+  }
+
+  return 'TI'
+}
+
 export async function hashPassword(password) {
   const salt = await bcrypt.genSalt(10)
   return bcrypt.hash(password, salt)
@@ -33,7 +44,7 @@ export function sanitizeUser(user) {
   return {
     id: user.id,
     nome: user.nome,
-    funcao: user.funcao || 'Manutenção TI',
+    funcao: normalizeUserRole(user.funcao),
     email: user.email,
     email_reserva: user.email_reserva || null,
     telefone: user.telefone,

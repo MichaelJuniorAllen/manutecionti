@@ -48,9 +48,25 @@ async function request(path, options = {}) {
     body: options.formData ? options.body : options.body ? JSON.stringify(options.body) : undefined,
   })
 
-  const data = await response.json().catch(() => ({}))
+  const raw = await response.text()
+  let data = {}
+
+  if (raw) {
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      data = { rawMessage: raw }
+    }
+  }
+
   if (!response.ok) {
-    let friendlyMessage = data.message || 'Erro ao processar requisição.'
+    const rawMessage = String(data.rawMessage || '').trim()
+    const defaultMessage = rawMessage || `Erro ao processar requisição (HTTP ${response.status}).`
+    let friendlyMessage = data.message || defaultMessage
+
+    if (response.status === 404 && path === '/profile/request-phone-change') {
+      friendlyMessage = 'Funcionalidade de SMS indisponível no servidor atual. Reinicie o backend para carregar as novas rotas.'
+    }
 
     if (response.status === 401) {
       const message = String(data.message || '').toLowerCase()
@@ -101,6 +117,15 @@ export const api = {
     },
     confirmEmailChange(code) {
       return request('/profile/confirm-email-change', { method: 'POST', body: { code } })
+    },
+    requestPhoneChange(newPhone) {
+      return request('/profile/request-phone-change', { method: 'POST', body: { newPhone } })
+    },
+    smsStatus() {
+      return request('/profile/sms-status')
+    },
+    confirmPhoneChange(code) {
+      return request('/profile/confirm-phone-change', { method: 'POST', body: { code } })
     },
     changePassword(payload) {
       return request('/profile/change-password', { method: 'POST', body: payload })

@@ -5,7 +5,8 @@ import { randomUUID } from 'node:crypto'
 import { requireAuth } from '../middleware/auth.js'
 import { comparePassword, hashPassword, sanitizeUser } from '../services/auth.js'
 import { mutateDatabase, nowIso } from '../services/database.js'
-import { isSmtpConfigured, sendEmailChangeCode } from '../services/mailer.js'
+import { getEmailProviderStatus, isSmtpConfigured, sendEmailChangeCode } from '../services/mailer.js'
+import { getSmsConfigurationStatus, isSmsConfigured, sendPhoneChangeCode } from '../services/sms.js'
 
 const router = express.Router()
 
@@ -39,8 +40,31 @@ function normalizePhone(value = '') {
   return value.replace(/\D/g, '')
 }
 
+function isValidPhone(value = '') {
+  const digits = normalizePhone(value)
+  return digits.length === 10 || digits.length === 11
+}
+
+function normalizeRole(value = '') {
+  const role = String(value).trim().toLowerCase()
+  if (role === 'ti') return 'TI'
+  if (role === 'manutenção' || role === 'manutencao' || role === 'manutenção ti' || role === 'manutencao ti') {
+    return 'Manutenção'
+  }
+  return ''
+}
+
 router.get('/me', requireAuth, async (req, res) => {
   return res.json({ user: sanitizeUser(req.auth.user) })
+})
+
+router.get('/sms-status', requireAuth, async (_, res) => {
+  const smsStatus = getSmsConfigurationStatus()
+  return res.json({
+    provider: smsStatus.provider,
+    smsConfigured: smsStatus.configured,
+    smsMissingConfig: smsStatus.missing,
+  })
 })
 
 router.put('/me', requireAuth, upload.single('foto'), async (req, res) => {
@@ -50,7 +74,7 @@ router.put('/me', requireAuth, upload.single('foto'), async (req, res) => {
 
   const nome = (req.body.nome || '').trim()
   const telefone = normalizePhone(req.body.telefone)
-  const funcao = (req.body.funcao || '').trim()
+  const funcao = normalizeRole(req.body.funcao || '')
   const senha = req.body.senha || ''
 
   if (!hasNomeField && !hasTelefoneField && !hasFuncaoField && !senha && !req.file) {
@@ -158,6 +182,7 @@ router.put('/emails', requireAuth, async (req, res) => {
 router.post('/request-email-change', requireAuth, async (req, res) => {
   const newEmail = normalizeEmail(req.body.newEmail)
   const expirationMinutes = 15
+  const emailStatus = getEmailProviderStatus()
 
   if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
     return res.status(400).json({ message: 'Informe um e-mail válido.' })
@@ -192,13 +217,15 @@ router.post('/request-email-change', requireAuth, async (req, res) => {
       expiresInMinutes: expirationMinutes,
     })
 
-    const smtpMessage = sendResult.mode === 'smtp'
+    const serviceMessage = sendResult.mode === 'sendgrid' || sendResult.mode === 'smtp'
       ? 'Código enviado para o novo e-mail.'
-      : 'SMTP não configurado. Código gerado em modo local (fallback no servidor).'
+      : 'Serviço de e-mail não configurado. Código gerado em modo local (fallback no servidor).'
 
     return res.json({
-      message: `Código de confirmação gerado. ${smtpMessage}`,
+      message: `Código de confirmação gerado. ${serviceMessage}`,
       smtpConfigured: isSmtpConfigured(),
+      emailProvider: emailStatus.provider,
+      ...(isSmtpConfigured() || process.env.NODE_ENV === 'production' ? {} : { debugCode: code }),
     })
   } catch (error) {
     return res.status(400).json({ message: error.message || 'Não foi possível solicitar alteração.' })
@@ -234,6 +261,104 @@ router.post('/confirm-email-change', requireAuth, async (req, res) => {
     return res.json({ message: 'E-mail alterado com sucesso.', user: updated })
   } catch (error) {
     return res.status(400).json({ message: error.message || 'Não foi possível confirmar alteração.' })
+  }
+})
+
+router.post('/request-phone-change', requireAuth, async (req, res) => {
+  const newPhone = normalizePhone(req.body.newPhone)
+  const expirationMinutes = 10
+  const smsStatus = getSmsConfigurationStatus()
+
+  if (!isValidPhone(newPhone)) {
+    return res.status(400).json({ message: 'Informe um telefone válido com DDD.' })
+  }
+
+  try {
+    let userName = ''
+    let code = ''
+
+    await mutateDatabase(async (db) => {
+      const user = db.usuarios.find((item) => item.id === req.auth.user.id)
+      const phoneInUse = db.usuarios.some((item) => item.id !== user.id && normalizePhone(item.telefone) === newPhone)
+      if (phoneInUse) {
+        throw new Error('Telefone já utilizado por outro usuário.')
+      }
+
+      userName = user.nome
+      code = String(Math.floor(100000 + Math.random() * 900000))
+      const expiresAt = new Date(Date.now() + expirationMinutes * 60000).toISOString()
+      user.pending_phone_change = {
+        new_phone: newPhone,
+        code,
+        requested_at: nowIso(),
+        expires_at: expiresAt,
+      }
+    })
+
+    const sendResult = await sendPhoneChangeCode({
+      toPhone: newPhone,
+      userName,
+      code,
+      expiresInMinutes: expirationMinutes,
+    })
+
+    const smsMessage = sendResult.mode === 'sms'
+      ? 'Código enviado por SMS para o novo telefone.'
+      : 'SMS não configurado. Código gerado em modo local (fallback no servidor).'
+
+    return res.json({
+      message: `Código de segurança gerado. ${smsMessage}`,
+      smsConfigured: isSmsConfigured(),
+      smsProvider: smsStatus.provider,
+      smsMissingConfig: smsStatus.missing,
+      ...(isSmsConfigured() || process.env.NODE_ENV === 'production' ? {} : { debugCode: code }),
+    })
+  } catch (error) {
+    return res.status(400).json({ message: error.message || 'Não foi possível solicitar alteração de telefone.' })
+  }
+})
+
+router.post('/confirm-phone-change', requireAuth, async (req, res) => {
+  const code = String(req.body.code || '').trim()
+
+  if (!code) {
+    return res.status(400).json({ message: 'Informe o código de segurança recebido por SMS.' })
+  }
+
+  try {
+    let updated
+
+    await mutateDatabase(async (db) => {
+      const user = db.usuarios.find((item) => item.id === req.auth.user.id)
+      const pending = user.pending_phone_change
+
+      if (!pending || pending.code !== code) {
+        throw new Error('Código inválido para alteração de telefone.')
+      }
+
+      const expiresAtMs = new Date(pending.expires_at || 0).getTime()
+      if (!Number.isFinite(expiresAtMs) || Date.now() > expiresAtMs) {
+        delete user.pending_phone_change
+        throw new Error('Código expirado. Solicite um novo código.')
+      }
+
+      const phoneInUse = db.usuarios.some(
+        (item) => item.id !== user.id && normalizePhone(item.telefone) === normalizePhone(pending.new_phone),
+      )
+
+      if (phoneInUse) {
+        delete user.pending_phone_change
+        throw new Error('O telefone informado já está em uso por outro usuário.')
+      }
+
+      user.telefone = normalizePhone(pending.new_phone)
+      delete user.pending_phone_change
+      updated = sanitizeUser(user)
+    })
+
+    return res.json({ message: 'Telefone alterado com sucesso.', user: updated })
+  } catch (error) {
+    return res.status(400).json({ message: error.message || 'Não foi possível confirmar alteração de telefone.' })
   }
 })
 

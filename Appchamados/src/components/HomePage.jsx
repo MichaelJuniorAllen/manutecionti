@@ -14,7 +14,7 @@ function HomePage({ onNavigate }) {
           <button type="button" className="card-button">Cadastrar</button>
         </article>
 
-        <article className="home-card card-history" onClick={() => onNavigate('/historico')}>
+        <article className="home-card card-history" onClick={() => onNavigate('/chamados')}>
           <div className="card-icon">📋</div>
           <h3>Ver Histórico</h3>
           <p>Acompanhe todas as solicitações registradas</p>

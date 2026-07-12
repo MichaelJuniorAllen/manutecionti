@@ -7,6 +7,20 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loadingSession, setLoadingSession] = useState(true)
 
+  async function syncUserFromProfile(fallbackUser = null) {
+    try {
+      const profileResult = await api.profile.me()
+      setUser(profileResult.user)
+      return profileResult.user
+    } catch {
+      if (fallbackUser) {
+        setUser(fallbackUser)
+        return fallbackUser
+      }
+      throw new Error('Não foi possível sincronizar o perfil.')
+    }
+  }
+
   useEffect(() => {
     const token = getStoredToken()
     if (!token) {
@@ -14,11 +28,7 @@ export function AuthProvider({ children }) {
       return
     }
 
-    api.auth
-      .session()
-      .then((result) => {
-        setUser(result.user)
-      })
+    syncUserFromProfile()
       .catch(() => {
         setStoredToken(null)
         setUser(null)
@@ -31,7 +41,7 @@ export function AuthProvider({ children }) {
   async function login(email, senha) {
     const result = await api.auth.login({ email, senha })
     setStoredToken(result.token)
-    setUser(result.user)
+    await syncUserFromProfile(result.user)
     return result
   }
 
@@ -48,7 +58,7 @@ export function AuthProvider({ children }) {
 
     const result = await api.auth.register(formData)
     setStoredToken(result.token)
-    setUser(result.user)
+    await syncUserFromProfile(result.user)
     return result
   }
 

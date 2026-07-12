@@ -128,8 +128,8 @@ function App() {
         title: 'Registrar novo chamado',
         subtitle: 'Use esta página para cadastrar solicitações de manutenção de TI.',
       },
-      '/historico': {
-        title: 'Histórico de chamados',
+      '/chamados': {
+        title: 'Chamados',
         subtitle: 'Acompanhe e atualize solicitações abertas pela sua conta.',
       },
       '/perfil': {
@@ -358,7 +358,7 @@ function App() {
           element={<NewTicketPage onNotify={notify} />}
         />
         <Route
-          path="/historico"
+          path="/chamados"
           element={(
             <ProtectedRoute>
               <HistoryPage
@@ -366,6 +366,14 @@ function App() {
                 currentUserId={user?.id || ''}
                 currentUserName={user?.nome || ''}
               />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/historico"
+          element={(
+            <ProtectedRoute>
+              <Navigate to="/chamados" replace />
             </ProtectedRoute>
           )}
         />
@@ -406,6 +414,34 @@ function App() {
       {loadingSession && <div className="loading-block">Carregando aplicação...</div>}
     </main>
   )
+}
+
+function formatPhoneDisplay(value = '') {
+  const digits = String(value || '').replace(/\D/g, '')
+
+  if (!digits) return '--'
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  }
+
+  return digits
+}
+
+function formatPhoneInput(value = '') {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 11)
+
+  if (!digits) return ''
+  if (digits.length <= 2) return `(${digits}`
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+}
+
+function normalizeEmailInput(value = '') {
+  return String(value || '').trim().toLowerCase()
 }
 
 function NewTicketPage({ onNotify }) {
@@ -753,6 +789,41 @@ function MyHistoryPage({ onNotify, currentUserName }) {
     return `${minutes} min`
   }
 
+  function formatElapsedForPdf(startAt, endAt) {
+    if (!startAt || !endAt) return '--'
+
+    const start = new Date(startAt).getTime()
+    const end = new Date(endAt).getTime()
+
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+      return '--'
+    }
+
+    const durationMs = end - start
+    const hours = Math.floor(durationMs / 3600000)
+    const minutes = Math.floor((durationMs % 3600000) / 60000)
+    const seconds = Math.floor((durationMs % 60000) / 1000)
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${seconds}s`
+    }
+
+    if (minutes > 0) {
+      return `${minutes}m ${seconds}s`
+    }
+
+    return `${seconds}s`
+  }
+
+  function getInProgressForPdf(ticket) {
+    const byDates = formatElapsedForPdf(ticket?.dataAtendimento, ticket?.dataFechamento)
+    if (byDates !== '--') {
+      return byDates
+    }
+
+    return formatResolutionForPdf(ticket?.tempoAndamento)
+  }
+
   function exportHistoryPdf() {
     if (!tickets.length) {
       onNotify('warning', 'Não há chamados para exportar no filtro atual.')
@@ -779,6 +850,7 @@ function MyHistoryPage({ onNotify, currentUserName }) {
         'Tecnico',
         'Fechamento',
         'Tempo total',
+        'Tempo andamento',
         'Observacoes',
       ]],
       body: tickets.map((ticket) => ([
@@ -790,6 +862,7 @@ function MyHistoryPage({ onNotify, currentUserName }) {
         ticket.tecnicoResponsavel || '--',
         formatDateForPdf(ticket.dataFechamento),
         formatResolutionForPdf(ticket.tempoResolucao),
+        getInProgressForPdf(ticket),
         ticket.observacoes || '--',
       ])),
       styles: {
@@ -886,9 +959,20 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
   const [nome, setNome] = useState(user?.nome || '')
   const [funcao, setFuncao] = useState(ROLE_OPTIONS.includes(user?.funcao) ? user?.funcao : 'TI')
   const [telefone, setTelefone] = useState(user?.telefone || '')
+  const [novoTelefone, setNovoTelefone] = useState('')
+  const [pendingPhoneTarget, setPendingPhoneTarget] = useState('')
+  const [phoneVerificationCode, setPhoneVerificationCode] = useState('')
+  const [isPhoneCodeModalOpen, setIsPhoneCodeModalOpen] = useState(false)
+  const [isCurrentPhoneConfirmModalOpen, setIsCurrentPhoneConfirmModalOpen] = useState(false)
+  const [smsStatus, setSmsStatus] = useState(null)
   const [foto, setFoto] = useState(null)
   const [primaryEmail, setPrimaryEmail] = useState(user?.email || '')
   const [reserveEmail, setReserveEmail] = useState(user?.email_reserva || '')
+  const [isEmailEditEnabled, setIsEmailEditEnabled] = useState(false)
+  const [pendingEmailTarget, setPendingEmailTarget] = useState('')
+  const [emailVerificationCode, setEmailVerificationCode] = useState('')
+  const [isEmailCodeModalOpen, setIsEmailCodeModalOpen] = useState(false)
+  const [isCurrentEmailConfirmModalOpen, setIsCurrentEmailConfirmModalOpen] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -900,9 +984,8 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null)
   const [pendingPhotoName, setPendingPhotoName] = useState('')
   const [applyingCrop, setApplyingCrop] = useState(false)
-  const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false)
+  const [isProfileEditEnabled, setIsProfileEditEnabled] = useState(false)
   const photoInputRef = useRef(null)
-  const roleMenuRef = useRef(null)
 
   useEffect(() => {
     setNome(user?.nome || '')
@@ -911,20 +994,6 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
     setPrimaryEmail(user?.email || '')
     setReserveEmail(user?.email_reserva || '')
   }, [user])
-
-  useEffect(() => {
-    function handleClickOutsideRoleMenu(event) {
-      if (!roleMenuRef.current) return
-      if (!roleMenuRef.current.contains(event.target)) {
-        setIsRoleMenuOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutsideRoleMenu)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutsideRoleMenu)
-    }
-  }, [])
 
   useEffect(() => () => {
     if (fotoPreviewUrl) {
@@ -989,6 +1058,12 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
 
   async function handleProfileSubmit(event) {
     event.preventDefault()
+
+    if (!isProfileEditEnabled) {
+      onNotify('warning', 'Clique em "Deseja fazer alterações?" para habilitar edição do perfil público.')
+      return
+    }
+
     try {
       const formData = new FormData()
       formData.append('nome', nome)
@@ -1019,7 +1094,6 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
       setFuncao(optimisticUser.funcao || 'TI')
       setTelefone(optimisticUser.telefone || '')
       setFoto(null)
-      setIsRoleMenuOpen(false)
       if (fotoPreviewUrl) {
         URL.revokeObjectURL(fotoPreviewUrl)
       }
@@ -1027,9 +1101,32 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
       if (photoInputRef.current) {
         photoInputRef.current.value = ''
       }
+      setIsProfileEditEnabled(false)
       onNotify('success', 'Dados pessoais atualizados com sucesso.')
     } catch (error) {
       onNotify('error', error.message)
+    }
+  }
+
+  function handleEnableProfileEdit(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    setIsProfileEditEnabled(true)
+    onNotify('success', 'Edição habilitada. Agora você pode alterar foto, nome e função.')
+  }
+
+  function handleCancelProfileEdit(event) {
+    event.preventDefault()
+    setIsProfileEditEnabled(false)
+    setNome(user?.nome || '')
+    setFuncao(ROLE_OPTIONS.includes(user?.funcao) ? user?.funcao : 'TI')
+    setFoto(null)
+    if (fotoPreviewUrl) {
+      URL.revokeObjectURL(fotoPreviewUrl)
+    }
+    setFotoPreviewUrl('')
+    if (photoInputRef.current) {
+      photoInputRef.current.value = ''
     }
   }
 
@@ -1108,68 +1205,256 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
 
   async function saveEmails(event) {
     event.preventDefault()
+
+    if (!isEmailEditEnabled) {
+      onNotify('warning', 'Clique em "Deseja fazer alterações?" para habilitar edição de e-mails.')
+      return
+    }
+
+    const targetEmail = normalizeEmailInput(primaryEmail)
+    const currentEmail = normalizeEmailInput(user?.email || '')
+
+    if (!targetEmail) {
+      onNotify('warning', 'Insira um e-mail pessoal válido.')
+      return
+    }
+
+    if (targetEmail === currentEmail) {
+      setIsCurrentEmailConfirmModalOpen(true)
+      return
+    }
+
+    await startEmailChangeRequest(targetEmail)
+  }
+
+  async function startEmailChangeRequest(targetEmailValue) {
+    const targetEmail = normalizeEmailInput(targetEmailValue)
+    if (!targetEmail) {
+      onNotify('warning', 'Insira um e-mail pessoal válido.')
+      return
+    }
+
     try {
-      const result = await api.profile.updateEmails({
-        email: primaryEmail,
-        emailReserva: reserveEmail,
-      })
+      const result = await api.profile.requestEmailChange(targetEmail)
+      setPendingEmailTarget(targetEmail)
+      setEmailVerificationCode('')
+      setIsEmailCodeModalOpen(true)
+      setIsCurrentEmailConfirmModalOpen(false)
+
+      if (!result?.smtpConfigured && result?.debugCode) {
+        onNotify('warning', `Ambiente local sem serviço de e-mail: use o código ${result.debugCode} para confirmar.`)
+      } else {
+        onNotify('success', 'Código de confirmação enviado para o novo e-mail.')
+      }
+    } catch (error) {
+      onNotify('error', error.message)
+    }
+  }
+
+  function handleEnableEmailEdit(event) {
+    event.preventDefault()
+    setIsEmailEditEnabled(true)
+    onNotify('success', 'Edição de e-mail pessoal habilitada.')
+  }
+
+  function handleCancelEmailEdit(event) {
+    event.preventDefault()
+    setIsEmailEditEnabled(false)
+    setPrimaryEmail(user?.email || '')
+    setPendingEmailTarget('')
+    setEmailVerificationCode('')
+    setIsEmailCodeModalOpen(false)
+    setIsCurrentEmailConfirmModalOpen(false)
+  }
+
+  function closeCurrentEmailConfirmModal() {
+    setIsCurrentEmailConfirmModalOpen(false)
+  }
+
+  async function confirmCurrentEmailAndContinue() {
+    await startEmailChangeRequest(normalizeEmailInput(user?.email || ''))
+  }
+
+  async function confirmEmailChangeCode(event) {
+    event.preventDefault()
+
+    const code = String(emailVerificationCode || '').trim()
+    if (!code) {
+      onNotify('warning', 'Informe o código de confirmação recebido no e-mail.')
+      return
+    }
+
+    try {
+      const result = await api.profile.confirmEmailChange(code)
       if (result?.user && onUserUpdated) {
         onUserUpdated(result.user)
       } else {
         await onRefreshUser()
       }
-      onNotify('success', 'E-mails atualizados com sucesso.')
+
+      setIsEmailEditEnabled(false)
+      setPendingEmailTarget('')
+      setEmailVerificationCode('')
+      setIsEmailCodeModalOpen(false)
+      onNotify('success', 'E-mail pessoal atualizado com sucesso.')
     } catch (error) {
       onNotify('error', error.message)
     }
   }
 
-  async function submitSecurity(event) {
+  function closeEmailCodeModal() {
+    setIsEmailCodeModalOpen(false)
+    setEmailVerificationCode('')
+  }
+
+  async function submitPhoneChange(event) {
     event.preventDefault()
 
-    const hasPhoneChange = String(telefone || '').trim() !== String(user?.telefone || '').trim()
-    const hasPasswordInput = Boolean(currentPassword || newPassword || confirmPassword)
+    const normalizedNewPhone = String(novoTelefone || '').replace(/\D/g, '')
+    const normalizedCurrentPhone = String(user?.telefone || '').replace(/\D/g, '')
 
-    if (!hasPhoneChange && !hasPasswordInput) {
-      onNotify('warning', 'Nenhuma alteração de segurança foi informada.')
+    if (!normalizedNewPhone) {
+      onNotify('warning', 'Insira novo telefone.')
+      return
+    }
+
+    if (normalizedNewPhone === normalizedCurrentPhone) {
+      setIsCurrentPhoneConfirmModalOpen(true)
+      return
+    }
+
+    await startPhoneChangeRequest(normalizedNewPhone)
+  }
+
+  async function startPhoneChangeRequest(phoneDigits) {
+    const normalizedTarget = String(phoneDigits || '').replace(/\D/g, '')
+    if (!normalizedTarget) {
+      onNotify('warning', 'Insira novo telefone.')
       return
     }
 
     try {
-      if (hasPhoneChange) {
-        const phonePayload = new FormData()
-        phonePayload.append('telefone', telefone)
-        const profileResult = await api.profile.update(phonePayload)
-        if (profileResult?.user && onUserUpdated) {
-          onUserUpdated(profileResult.user)
-        }
+      const response = await api.profile.requestPhoneChange(normalizedTarget)
+      setPendingPhoneTarget(normalizedTarget)
+      setPhoneVerificationCode('')
+      setIsPhoneCodeModalOpen(true)
+      setIsCurrentPhoneConfirmModalOpen(false)
+
+      if (!response?.smsConfigured && response?.debugCode) {
+        onNotify('warning', `Ambiente local sem SMS: use o código ${response.debugCode} para confirmar.`)
+      } else {
+        onNotify('success', 'Código de segurança enviado por SMS para o novo telefone.')
       }
-
-      if (hasPasswordInput) {
-        if (!currentPassword || !newPassword || !confirmPassword) {
-          onNotify('warning', 'Preencha senha atual, nova senha e confirmação.')
-          return
-        }
-
-        if (newPassword !== confirmPassword) {
-          onNotify('warning', 'A confirmação da nova senha não confere.')
-          return
-        }
-
-        await api.profile.changePassword({ currentPassword, newPassword })
-        setCurrentPassword('')
-        setNewPassword('')
-        setConfirmPassword('')
-      }
-
-      if (!hasPhoneChange || !onUserUpdated) {
-        await onRefreshUser()
-      }
-      onNotify('success', 'Configurações de segurança atualizadas com sucesso.')
     } catch (error) {
       onNotify('error', error.message)
     }
   }
+
+  function closeCurrentPhoneConfirmModal() {
+    setIsCurrentPhoneConfirmModalOpen(false)
+  }
+
+  async function confirmCurrentPhoneAndContinue() {
+    await startPhoneChangeRequest(String(user?.telefone || '').replace(/\D/g, ''))
+  }
+
+  async function confirmPhoneChangeCode(event) {
+    event.preventDefault()
+
+    const code = String(phoneVerificationCode || '').trim()
+    if (!code) {
+      onNotify('warning', 'Informe o código de segurança recebido por SMS.')
+      return
+    }
+
+    try {
+      const result = await api.profile.confirmPhoneChange(code)
+      if (result?.user && onUserUpdated) {
+        onUserUpdated(result.user)
+      } else {
+        await onRefreshUser()
+      }
+
+      setNovoTelefone('')
+      setPendingPhoneTarget('')
+      setPhoneVerificationCode('')
+      setIsPhoneCodeModalOpen(false)
+      onNotify('success', 'Telefone atualizado com sucesso.')
+      setActiveSection('security')
+    } catch (error) {
+      onNotify('error', error.message)
+    }
+  }
+
+  function closePhoneCodeModal() {
+    setIsPhoneCodeModalOpen(false)
+    setPhoneVerificationCode('')
+  }
+
+  function openPhoneChangeSection() {
+    setNovoTelefone('')
+    setPendingPhoneTarget('')
+    setPhoneVerificationCode('')
+    setIsPhoneCodeModalOpen(false)
+    setIsCurrentPhoneConfirmModalOpen(false)
+    setSmsStatus(null)
+    setActiveSection('security-phone')
+  }
+
+  useEffect(() => {
+    if (activeSection !== 'security-phone') return
+
+    let cancelled = false
+
+    api.profile
+      .smsStatus()
+      .then((result) => {
+        if (cancelled) return
+        setSmsStatus({
+          configured: Boolean(result?.smsConfigured),
+          provider: result?.provider || 'desconhecido',
+          missing: Array.isArray(result?.smsMissingConfig) ? result.smsMissingConfig : [],
+        })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setSmsStatus({ configured: false, provider: 'desconhecido', missing: [] })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeSection])
+
+  async function submitPasswordChange(event) {
+    event.preventDefault()
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      onNotify('warning', 'Preencha senha atual, nova senha e confirmação.')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      onNotify('warning', 'A confirmação da nova senha não confere.')
+      return
+    }
+
+    try {
+      await api.profile.changePassword({ currentPassword, newPassword })
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      onNotify('success', 'Senha atualizada com sucesso.')
+      setActiveSection('security')
+    } catch (error) {
+      onNotify('error', error.message)
+    }
+  }
+
+  const isSecuritySectionActive = activeSection === 'security'
+    || activeSection === 'security-phone'
+    || activeSection === 'security-password'
+  const currentPhoneDisplay = formatPhoneDisplay(user?.telefone || '')
 
   return (
     <section className="settings-page">
@@ -1179,7 +1464,7 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
             <Avatar user={user} size={56} />
             <div>
               <strong>{user?.nome || 'Usuário'}</strong>
-              <p>{user?.funcao || 'Manutenção TI'}</p>
+              <p>{user?.funcao || 'TI'}</p>
             </div>
           </div>
 
@@ -1207,7 +1492,7 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
             </button>
             <button
               type="button"
-              className={activeSection === 'security' ? 'settings-nav-item active' : 'settings-nav-item'}
+              className={isSecuritySectionActive ? 'settings-nav-item active' : 'settings-nav-item'}
               onClick={() => setActiveSection('security')}
             >
               Segurança
@@ -1277,6 +1562,7 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
                     <button
                       type="button"
                       className="secondary"
+                      disabled={!isProfileEditEnabled}
                       onClick={() => photoInputRef.current?.click()}
                     >
                       Editar foto
@@ -1285,6 +1571,7 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
                       <button
                         type="button"
                         className="secondary"
+                        disabled={!isProfileEditEnabled}
                         onClick={clearSelectedPhoto}
                       >
                         Cancelar alteração
@@ -1299,6 +1586,7 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   className="profile-photo-input-hidden"
+                  disabled={!isProfileEditEnabled}
                   onChange={handlePhotoChange}
                 />
 
@@ -1359,50 +1647,43 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
 
               <div className="field">
                 <label htmlFor="settingsNome">Nome</label>
-                <input id="settingsNome" value={nome} onChange={(event) => setNome(event.target.value)} required />
+                <input
+                  id="settingsNome"
+                  value={nome}
+                  onChange={(event) => setNome(event.target.value)}
+                  disabled={!isProfileEditEnabled}
+                  required
+                />
               </div>
               <div className="field">
                 <label htmlFor="settingsFuncao">Função</label>
-                <div className="funcao-picker" ref={roleMenuRef}>
-                  <button
-                    type="button"
-                    className="secondary funcao-add-btn"
-                    aria-label="Escolher função"
-                    aria-expanded={isRoleMenuOpen}
-                    onClick={() => setIsRoleMenuOpen((current) => !current)}
-                  >
-                    +
-                  </button>
-                  <input
-                    id="settingsFuncao"
-                    value={funcao}
-                    readOnly
-                    required
-                  />
-
-                  {isRoleMenuOpen ? (
-                    <div className="funcao-menu" role="menu" aria-label="Selecionar função">
-                      <p className="funcao-menu-title">Escolha sua função</p>
-                      {ROLE_OPTIONS.map((option) => (
-                        <button
-                          key={option}
-                          type="button"
-                          className={funcao === option ? 'funcao-menu-item active' : 'funcao-menu-item'}
-                          onClick={() => {
-                            setFuncao(option)
-                            setIsRoleMenuOpen(false)
-                          }}
-                        >
-                          <span>{option}</span>
-                          {funcao === option ? <span className="funcao-selected-mark">✓</span> : null}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
+                <select
+                  id="settingsFuncao"
+                  className="funcao-select"
+                  value={funcao}
+                  disabled={!isProfileEditEnabled}
+                  onChange={(event) => setFuncao(event.target.value)}
+                  required
+                >
+                  {ROLE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
               </div>
 
-              <button type="submit">Salvar dados pessoais</button>
+              {!isProfileEditEnabled ? (
+                <button
+                  type="button"
+                  onClick={handleEnableProfileEdit}
+                >
+                  Deseja fazer alterações?
+                </button>
+              ) : (
+                <>
+                  <button type="submit">Salvar dados pessoais</button>
+                  <button type="button" className="secondary" onClick={handleCancelProfileEdit}>Cancelar edição</button>
+                </>
+              )}
             </form>
           )}
 
@@ -1415,46 +1696,170 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
 
               <form className="settings-inline-form" onSubmit={saveEmails}>
                 <div className="field">
-                  <label htmlFor="settingsPrimaryEmail">E-mail atual cadastrado</label>
+                  <label htmlFor="settingsPrimaryEmail">Email pessoal</label>
                   <input
                     id="settingsPrimaryEmail"
                     type="email"
                     value={primaryEmail}
+                    disabled={!isEmailEditEnabled}
                     onChange={(event) => setPrimaryEmail(event.target.value)}
                     required
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="settingsReserveEmail">E-mail de reserva</label>
+                  <label htmlFor="settingsReserveEmail">Email corporativo</label>
                   <input
                     id="settingsReserveEmail"
                     type="email"
                     value={reserveEmail}
-                    onChange={(event) => setReserveEmail(event.target.value)}
+                    disabled
                     placeholder="exemplo.reserva@dominio.com"
                   />
                 </div>
-                <p className="settings-inline-tip">Deseja cadastrar ou configurar seu e-mail atual e o de reserva? Atualize os dois campos acima.</p>
-                <button type="submit">Salvar e-mails</button>
+                <p className="settings-inline-tip">O botão abaixo altera somente o e-mail pessoal e exige confirmação por código.</p>
+                {!isEmailEditEnabled ? (
+                  <button type="button" onClick={handleEnableEmailEdit}>Deseja fazer alterações?</button>
+                ) : (
+                  <>
+                    <button type="submit">Salvar e-mail pessoal</button>
+                    <button type="button" className="secondary" onClick={handleCancelEmailEdit}>Cancelar edição</button>
+                  </>
+                )}
               </form>
+
+              {isEmailCodeModalOpen ? (
+                <div className="phone-code-overlay" role="dialog" aria-modal="true" aria-label="Confirmar código de e-mail">
+                  <form className="phone-code-modal panel" onSubmit={confirmEmailChangeCode}>
+                    <h3>Confirmar código de e-mail</h3>
+                    <p>
+                      Digite o código enviado para {pendingEmailTarget || normalizeEmailInput(primaryEmail)}.
+                    </p>
+                    <div className="field">
+                      <label htmlFor="emailCodeInput">Código de confirmação</label>
+                      <input
+                        id="emailCodeInput"
+                        value={emailVerificationCode}
+                        onChange={(event) => setEmailVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="000000"
+                        inputMode="numeric"
+                        required
+                      />
+                    </div>
+                    <button type="submit">Confirmar código</button>
+                    <button type="button" className="secondary" onClick={closeEmailCodeModal}>Cancelar</button>
+                  </form>
+                </div>
+              ) : null}
+
+              {isCurrentEmailConfirmModalOpen ? (
+                <div className="phone-code-overlay" role="dialog" aria-modal="true" aria-label="Confirmar e-mail atual">
+                  <div className="phone-code-modal panel">
+                    <h3>Confirmar e-mail atual</h3>
+                    <p>
+                      Deseja confirmar seu e-mail atual {normalizeEmailInput(user?.email || '')}?
+                    </p>
+                    <button type="button" onClick={confirmCurrentEmailAndContinue}>Sim</button>
+                    <button type="button" className="secondary" onClick={closeCurrentEmailConfirmModal}>Não</button>
+                  </div>
+                </div>
+              ) : null}
             </section>
           )}
 
           {activeSection === 'security' && (
-            <form className="settings-card" onSubmit={submitSecurity}>
+            <section className="settings-card settings-stack">
               <div className="settings-card-header">
                 <h2>Segurança</h2>
-                <p>Atualize telefone e senha da conta.</p>
+                <p>Escolha qual informação de segurança você deseja alterar.</p>
+                <p><strong>Telefone atual:</strong> {currentPhoneDisplay}</p>
               </div>
 
-              <div className="field">
-                <label htmlFor="settingsTelefone">Telefone</label>
-                <input
-                  id="settingsTelefone"
-                  value={telefone}
-                  onChange={(event) => setTelefone(event.target.value)}
-                  required
-                />
+              <button type="button" onClick={openPhoneChangeSection}>Trocar telefone</button>
+              <button type="button" onClick={() => setActiveSection('security-password')}>Trocar senha</button>
+            </section>
+          )}
+
+          {activeSection === 'security-phone' && (
+            <>
+              <form className="settings-card" onSubmit={submitPhoneChange}>
+                <div className="settings-card-header">
+                  <h2>Trocar telefone</h2>
+                  <p>Atualize seu número de telefone cadastrado.</p>
+                  <p><strong>Telefone atual:</strong> {currentPhoneDisplay}</p>
+                  {smsStatus ? (
+                    <div className={smsStatus.configured ? 'sms-status sms-status-ok' : 'sms-status sms-status-fallback'}>
+                      <strong>
+                        {smsStatus.configured ? 'SMS real ativo' : 'Fallback local ativo'}
+                      </strong>
+                      {!smsStatus.configured ? (
+                        <span>Configure o Twilio para envio real.</span>
+                      ) : null}
+                      {!smsStatus.configured && smsStatus.missing?.length ? (
+                        <small>Faltando: {smsStatus.missing.join(', ')}</small>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="field">
+                  <label htmlFor="settingsTelefone">Insira novo telefone</label>
+                  <input
+                    id="settingsTelefone"
+                    value={novoTelefone}
+                    onChange={(event) => setNovoTelefone(formatPhoneInput(event.target.value))}
+                    placeholder="(xx) xxxxx-xxxx"
+                    required
+                  />
+                </div>
+
+                <button type="submit">Salvar telefone</button>
+                <button type="button" className="secondary" onClick={() => setActiveSection('security')}>Voltar</button>
+              </form>
+
+              {isPhoneCodeModalOpen ? (
+                <div className="phone-code-overlay" role="dialog" aria-modal="true" aria-label="Confirmar código SMS">
+                  <form className="phone-code-modal panel" onSubmit={confirmPhoneChangeCode}>
+                    <h3>Confirmar código de segurança</h3>
+                    <p>
+                      Digite o código enviado por SMS para {formatPhoneDisplay(pendingPhoneTarget)}.
+                    </p>
+                    <div className="field">
+                      <label htmlFor="phoneCodeInput">Código de segurança</label>
+                      <input
+                        id="phoneCodeInput"
+                        value={phoneVerificationCode}
+                        onChange={(event) => setPhoneVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="000000"
+                        inputMode="numeric"
+                        required
+                      />
+                    </div>
+                    <button type="submit">Confirmar código</button>
+                    <button type="button" className="secondary" onClick={closePhoneCodeModal}>Cancelar</button>
+                  </form>
+                </div>
+              ) : null}
+
+              {isCurrentPhoneConfirmModalOpen ? (
+                <div className="phone-code-overlay" role="dialog" aria-modal="true" aria-label="Confirmar telefone atual">
+                  <div className="phone-code-modal panel">
+                    <h3>Confirmar telefone atual</h3>
+                    <p>
+                      Deseja confirmar seu número de telefone atual {formatPhoneDisplay(user?.telefone || '')}?
+                    </p>
+                    <button type="button" onClick={confirmCurrentPhoneAndContinue}>Sim</button>
+                    <button type="button" className="secondary" onClick={closeCurrentPhoneConfirmModal}>Não</button>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          )}
+
+          {activeSection === 'security-password' && (
+            <form className="settings-card" onSubmit={submitPasswordChange}>
+              <div className="settings-card-header">
+                <h2>Trocar senha</h2>
+                <p>Informe a senha atual e defina uma nova senha.</p>
               </div>
 
               <div className="field">
@@ -1485,7 +1890,8 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
                 />
               </div>
 
-              <button type="submit">Salvar segurança</button>
+              <button type="submit">Salvar senha</button>
+              <button type="button" className="secondary" onClick={() => setActiveSection('security')}>Voltar</button>
             </form>
           )}
         </section>

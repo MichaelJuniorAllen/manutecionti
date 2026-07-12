@@ -14,13 +14,13 @@ function ProfileMenu({ user, open, onToggle, onClose, onLogout }) {
             <Avatar user={user} size={52} />
             <div>
               <strong>{user?.nome}</strong>
-              <p>{user?.funcao || 'Manutenção TI'}</p>
+              <p>{user?.funcao || 'TI'}</p>
             </div>
           </div>
           <nav className="profile-links">
             <Link to="/" onClick={onClose}>Sistema de Chamados</Link>
-            <Link to="/perfil" onClick={onClose}>Meu Perfil</Link>
-            <Link to="/historico" onClick={onClose}>Histórico de Chamados</Link>
+            <Link to="/perfil" onClick={onClose}>Grafico</Link>
+            <Link to="/chamados" onClick={onClose}>Chamados</Link>
             <Link to="/meu-historico" onClick={onClose}>Meu Histórico</Link>
             <Link to="/configuracoes" onClick={onClose}>Configurações</Link>
             <button type="button" className="logout-menu-btn" onClick={onLogout}>Sair</button>
