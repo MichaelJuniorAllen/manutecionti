@@ -1,2 +1,12 @@
 [build]
 base = "Appchamados"
+command = "npm ci && npm run build"
+publish = "dist"
+
+[build.environment]
+VITE_API_URL = "https://manutecionti.onrender.com/api"
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
