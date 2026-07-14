@@ -3,6 +3,9 @@ command = "npm ci && npm run build"
 publish = "dist"
 
 [build.environment]
+# Vite 8 / React 19 require Node >=20.19 || >=22.12. Pin so the build image
+# doesn't fall back to an older Node that fails `vite build`.
+NODE_VERSION = "22"
 VITE_API_URL = "https://manutecionti.onrender.com/api"
 
 # SPA fallback: any non-file route serves index.html

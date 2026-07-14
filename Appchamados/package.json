@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "start": "concurrently \"npm:server:dev\" \"npm:client\"",
     "dev": "concurrently \"npm:server:dev\" \"npm:client\"",
