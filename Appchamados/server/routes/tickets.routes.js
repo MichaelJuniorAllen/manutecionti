@@ -12,6 +12,27 @@ const priorityToMinutes = {
   baixa: 1440,
 }
 
+const ALLOWED_TICKET_EMAILS = new Set([
+  'scihupacentral@maoamigacaxias.org.br',
+  'nutricionistaupacentral@maoamigacaxias.org.br',
+  'coordadmupacentral@maoamigacaxias.org.br',
+  'coordinfraestruraupacentral@maoamigacaxias.org.br',
+  'educacaocontinuadaupacentral@maoamigacaxias.org.br',
+  'farmaceuticaclinicaupacentral@maoamigacaxias.org.br',
+  'coordfarmaciaupacentral@maoamigacaxias.org.br',
+  'diretorclinicoupacentral@maoamigacaxias.org.br',
+  'coordmedicoupacentral@maoamigacaxias.org.br',
+  'faturamentoupacentral@maoamigacaxias.org.br',
+  'tiupacentral@maoamigacaxias.org.br',
+  'manutencaoupacentral@maoamigacaxias.org.br',
+  'sesmtupacentral@maoamigacaxias.org.br',
+  'assistentesocialupacentral@maoamigacaxias.org.br',
+  'recpcaoupacentral@maoamigacaxias.org.br',
+  'enfermagemupacentral@maoamigacaxias.org.br',
+  'odontologiaupacentral@maoamigacaxias.org.br',
+  'coordenfermagemupacentral@maoamigacaxias.org.br',
+])
+
 const streamClients = new Set()
 
 function normalize(value = '') {
@@ -105,17 +126,22 @@ router.post('/', optionalAuth, async (req, res) => {
     descricao: (req.body.descricao || '').trim(),
     area: (req.body.area || '').trim(),
     solicitante: (req.body.solicitante || '').trim(),
+    email_corporativo: normalize(req.body.emailCorporativo || ''),
     prioridade: (req.body.prioridade || 'media').trim().toLowerCase(),
     tecnico_responsavel: (req.body.tecnicoResponsavel || '').trim(),
     observacoes: (req.body.observacoes || '').trim(),
   }
 
-  if (!payload.titulo || !payload.descricao || !payload.area) {
-    return res.status(400).json({ message: 'Título, descrição e área são obrigatórios.' })
+  if (!payload.titulo || !payload.descricao || !payload.area || !payload.email_corporativo) {
+    return res.status(400).json({ message: 'Título, descrição, área e e-mail corporativo são obrigatórios.' })
   }
 
   if (!priorityToMinutes[payload.prioridade]) {
     return res.status(400).json({ message: 'Prioridade inválida.' })
+  }
+
+  if (!ALLOWED_TICKET_EMAILS.has(payload.email_corporativo)) {
+    return res.status(400).json({ message: 'Digite um e-mail corporativo autorizado para registrar o chamado.' })
   }
 
   try {
@@ -134,6 +160,7 @@ router.post('/', optionalAuth, async (req, res) => {
         titulo: payload.titulo,
         descricao: payload.descricao,
         area: payload.area,
+        email_corporativo: payload.email_corporativo,
         prioridade: payload.prioridade,
         status: 'Aberto',
         tecnico_responsavel: payload.tecnico_responsavel || 'Não atribuído',

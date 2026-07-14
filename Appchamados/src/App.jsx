@@ -21,6 +21,47 @@ import { getCroppedImageFile } from './utils/imageCrop'
 const TEN_MINUTES_MS = 10 * 60 * 1000
 const ROLE_OPTIONS = ['Manutenção', 'TI']
 
+function getFullName(user) {
+  const firstName = String(user?.nome || '').trim()
+  const lastName = String(user?.sobrenome || '').trim()
+
+  if (firstName && lastName) {
+    if (firstName.toLowerCase().endsWith(` ${lastName.toLowerCase()}`) || firstName.toLowerCase() === lastName.toLowerCase()) {
+      return firstName
+    }
+
+    return `${firstName} ${lastName}`
+  }
+
+  return firstName || 'Usuário'
+}
+
+function splitFullName(user) {
+  const rawFirstName = String(user?.nome || '').trim()
+  const rawSurname = String(user?.sobrenome || '').trim()
+
+  if (rawSurname) {
+    const parts = rawFirstName.split(/\s+/).filter(Boolean)
+    return {
+      nome: parts[0] || rawFirstName || '',
+      sobrenome: rawSurname,
+    }
+  }
+
+  const parts = rawFirstName.split(/\s+/).filter(Boolean)
+  if (parts.length <= 1) {
+    return {
+      nome: rawFirstName,
+      sobrenome: '',
+    }
+  }
+
+  return {
+    nome: parts[0] || '',
+    sobrenome: parts.slice(1).join(' '),
+  }
+}
+
 function formatPriority(priority = '') {
   const labels = {
     critica: 'Crítica',
@@ -126,7 +167,7 @@ function App() {
       },
       '/novo-chamado': {
         title: 'Registrar novo chamado',
-        subtitle: 'Use esta página para cadastrar solicitações de manutenção de TI.',
+        subtitle: 'Use esta página para cadastrar solicitações de manutenção e de TI.',
       },
       '/chamados': {
         title: 'Chamados',
@@ -174,6 +215,15 @@ function App() {
     setMenuOpen(false)
     setSiteNotice(null)
     notify('success', 'Sessão encerrada com sucesso.')
+    navigate('/')
+  }
+
+  function handleGoBack() {
+    if (window.history.length > 1) {
+      navigate(-1)
+      return
+    }
+
     navigate('/')
   }
 
@@ -319,6 +369,12 @@ function App() {
         </div>
 
         <div className="top-actions">
+          {location.pathname === '/novo-chamado' ? (
+            <button type="button" className="secondary" onClick={handleGoBack}>
+              Voltar
+            </button>
+          ) : null}
+
           {isAuthenticated && siteNotice ? (
             <aside className={`site-notice site-notice-${siteNotice.priority || 'media'}`} role="status" aria-live="polite">
               <div className="site-notice-content">
@@ -364,7 +420,7 @@ function App() {
               <HistoryPage
                 onNotify={notify}
                 currentUserId={user?.id || ''}
-                currentUserName={user?.nome || ''}
+                currentUserName={getFullName(user)}
               />
             </ProtectedRoute>
           )}
@@ -389,7 +445,7 @@ function App() {
           path="/meu-historico"
           element={(
             <ProtectedRoute>
-              <MyHistoryPage onNotify={notify} currentUserName={user?.nome || ''} />
+              <MyHistoryPage onNotify={notify} currentUserName={getFullName(user)} />
             </ProtectedRoute>
           )}
         />
@@ -453,6 +509,7 @@ function NewTicketPage({ onNotify }) {
       descricao: values.description,
       area: values.area,
       solicitante: values.requester,
+      emailCorporativo: values.corporateEmail,
       prioridade: values.priority,
       tecnicoResponsavel: values.responsible,
       observacoes: values.description,
@@ -626,8 +683,10 @@ function ProfilePage({ user }) {
     <section className="profile-page">
       <div className="panel profile-data">
         <h2>Resumo do Perfil</h2>
-        <p><strong>Nome:</strong> {user?.nome}</p>
+        <p><strong>Nome completo:</strong> {getFullName(user)}</p>
+        <p><strong>Sobrenome:</strong> {user?.sobrenome || '--'}</p>
         <p><strong>E-mail:</strong> {user?.email}</p>
+        <p><strong>E-mail corporativo:</strong> {user?.email_reserva || '--'}</p>
         <p><strong>Telefone:</strong> {user?.telefone}</p>
         <p><strong>Data de cadastro:</strong> {user?.data_cadastro ? new Date(user.data_cadastro).toLocaleString('pt-BR') : '--'}</p>
         <p><strong>Último acesso:</strong> {user?.ultimo_acesso ? new Date(user.ultimo_acesso).toLocaleString('pt-BR') : '--'}</p>
@@ -651,7 +710,7 @@ function MyHistoryPage({ onNotify, currentUserName }) {
     status: 'Concluído',
     priority: 'todos',
     area: 'todos',
-    responsible: currentUserName || 'todos',
+    responsible: 'todos',
     search: '',
   })
 
@@ -665,7 +724,7 @@ function MyHistoryPage({ onNotify, currentUserName }) {
       status: 'Concluído',
       priority: 'todos',
       area: 'todos',
-      responsible: currentUserName || 'todos',
+      responsible: 'todos',
       search: '',
     }
 
@@ -956,7 +1015,9 @@ function MyHistoryPage({ onNotify, currentUserName }) {
 function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
   const [activeSection, setActiveSection] = useState('preferences')
   const [settings, setSettings] = useState({ notifications: true, compactMode: false })
-  const [nome, setNome] = useState(user?.nome || '')
+  const initialNameParts = splitFullName(user)
+  const [nome, setNome] = useState(initialNameParts.nome)
+  const [sobrenome, setSobrenome] = useState(initialNameParts.sobrenome)
   const [funcao, setFuncao] = useState(ROLE_OPTIONS.includes(user?.funcao) ? user?.funcao : 'TI')
   const [telefone, setTelefone] = useState(user?.telefone || '')
   const [novoTelefone, setNovoTelefone] = useState('')
@@ -976,6 +1037,8 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordVerificationCode, setPasswordVerificationCode] = useState('')
+  const [isPasswordCodeModalOpen, setIsPasswordCodeModalOpen] = useState(false)
   const [fotoPreviewUrl, setFotoPreviewUrl] = useState('')
   const [cropImageSource, setCropImageSource] = useState('')
   const [isCropModalOpen, setIsCropModalOpen] = useState(false)
@@ -988,7 +1051,9 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
   const photoInputRef = useRef(null)
 
   useEffect(() => {
-    setNome(user?.nome || '')
+    const nextNameParts = splitFullName(user)
+    setNome(nextNameParts.nome)
+    setSobrenome(nextNameParts.sobrenome)
     setFuncao(ROLE_OPTIONS.includes(user?.funcao) ? user?.funcao : 'TI')
     setTelefone(user?.telefone || '')
     setPrimaryEmail(user?.email || '')
@@ -1067,6 +1132,7 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
     try {
       const formData = new FormData()
       formData.append('nome', nome)
+      formData.append('sobrenome', sobrenome)
       formData.append('funcao', funcao)
       if (telefone) {
         formData.append('telefone', telefone)
@@ -1079,10 +1145,12 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
       const optimisticUser = {
         ...(user || {}),
         ...(result?.user || {}),
-        nome,
+        nome: `${nome} ${sobrenome}`.trim(),
+        sobrenome,
         funcao,
         telefone: telefone || user?.telefone || '',
       }
+      const updatedProfile = result?.user || optimisticUser
 
       if (onUserUpdated) {
         onUserUpdated(optimisticUser)
@@ -1090,7 +1158,9 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
         await onRefreshUser()
       }
 
-      setNome(optimisticUser.nome || '')
+      const nextNameParts = splitFullName(updatedProfile)
+      setNome(nextNameParts.nome)
+      setSobrenome(nextNameParts.sobrenome)
       setFuncao(optimisticUser.funcao || 'TI')
       setTelefone(optimisticUser.telefone || '')
       setFoto(null)
@@ -1118,7 +1188,9 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
   function handleCancelProfileEdit(event) {
     event.preventDefault()
     setIsProfileEditEnabled(false)
-    setNome(user?.nome || '')
+    const nextNameParts = splitFullName(user)
+    setNome(nextNameParts.nome)
+    setSobrenome(nextNameParts.sobrenome)
     setFuncao(ROLE_OPTIONS.includes(user?.funcao) ? user?.funcao : 'TI')
     setFoto(null)
     if (fotoPreviewUrl) {
@@ -1440,15 +1512,47 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
     }
 
     try {
-      await api.profile.changePassword({ currentPassword, newPassword })
+      const result = await api.profile.requestPasswordChange({ currentPassword, newPassword })
+
+      if (result?.debugCode) {
+        onNotify('warning', `Ambiente local sem serviço de e-mail: use o código ${result.debugCode} para confirmar.`)
+      } else {
+        onNotify('success', 'Código enviado para seu e-mail pessoal. Confirme para concluir a troca da senha.')
+      }
+
+      setPasswordVerificationCode('')
+      setIsPasswordCodeModalOpen(true)
+    } catch (error) {
+      onNotify('error', error.message)
+    }
+  }
+
+  async function confirmPasswordChangeCode(event) {
+    event.preventDefault()
+
+    const code = String(passwordVerificationCode || '').trim()
+    if (!code) {
+      onNotify('warning', 'Informe o código de confirmação enviado por e-mail.')
+      return
+    }
+
+    try {
+      const result = await api.profile.confirmPasswordChange(code)
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
-      onNotify('success', 'Senha atualizada com sucesso.')
+      setPasswordVerificationCode('')
+      setIsPasswordCodeModalOpen(false)
+      onNotify('success', result.message || 'Senha atualizada com sucesso.')
       setActiveSection('security')
     } catch (error) {
       onNotify('error', error.message)
     }
+  }
+
+  function closePasswordCodeModal() {
+    setIsPasswordCodeModalOpen(false)
+    setPasswordVerificationCode('')
   }
 
   const isSecuritySectionActive = activeSection === 'security'
@@ -1463,7 +1567,7 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
           <div className="settings-user-summary">
             <Avatar user={user} size={56} />
             <div>
-              <strong>{user?.nome || 'Usuário'}</strong>
+              <strong>{getFullName(user)}</strong>
               <p>{user?.funcao || 'TI'}</p>
             </div>
           </div>
@@ -1651,6 +1755,16 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
                   id="settingsNome"
                   value={nome}
                   onChange={(event) => setNome(event.target.value)}
+                  disabled={!isProfileEditEnabled}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="settingsSobrenome">Sobrenome</label>
+                <input
+                  id="settingsSobrenome"
+                  value={sobrenome}
+                  onChange={(event) => setSobrenome(event.target.value)}
                   disabled={!isProfileEditEnabled}
                   required
                 />
@@ -1856,43 +1970,69 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
           )}
 
           {activeSection === 'security-password' && (
-            <form className="settings-card" onSubmit={submitPasswordChange}>
-              <div className="settings-card-header">
-                <h2>Trocar senha</h2>
-                <p>Informe a senha atual e defina uma nova senha.</p>
-              </div>
+            <>
+              <form className="settings-card" onSubmit={submitPasswordChange}>
+                <div className="settings-card-header">
+                  <h2>Trocar senha</h2>
+                  <p>Informe a senha atual e defina uma nova senha.</p>
+                </div>
 
-              <div className="field">
-                <label htmlFor="settingsCurrentPassword">Senha atual</label>
-                <input
-                  id="settingsCurrentPassword"
-                  type="password"
-                  value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="settingsNewPassword">Nova senha</label>
-                <input
-                  id="settingsNewPassword"
-                  type="password"
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="settingsConfirmPassword">Confirmar nova senha</label>
-                <input
-                  id="settingsConfirmPassword"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                />
-              </div>
+                <div className="field">
+                  <label htmlFor="settingsCurrentPassword">Senha atual</label>
+                  <input
+                    id="settingsCurrentPassword"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="settingsNewPassword">Nova senha</label>
+                  <input
+                    id="settingsNewPassword"
+                    type="password"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="settingsConfirmPassword">Confirmar nova senha</label>
+                  <input
+                    id="settingsConfirmPassword"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                  />
+                </div>
 
-              <button type="submit">Salvar senha</button>
-              <button type="button" className="secondary" onClick={() => setActiveSection('security')}>Voltar</button>
-            </form>
+                <button type="submit">Salvar senha</button>
+                <button type="button" className="secondary" onClick={() => setActiveSection('security')}>Voltar</button>
+              </form>
+
+              {isPasswordCodeModalOpen ? (
+                <div className="phone-code-overlay" role="dialog" aria-modal="true" aria-label="Confirmar código de troca de senha">
+                  <form className="phone-code-modal panel" onSubmit={confirmPasswordChangeCode}>
+                    <h3>Confirmar código de e-mail</h3>
+                    <p>
+                      Digite o código enviado para {normalizeEmailInput(user?.email || '')}.
+                    </p>
+                    <div className="field">
+                      <label htmlFor="passwordCodeInput">Código de confirmação</label>
+                      <input
+                        id="passwordCodeInput"
+                        value={passwordVerificationCode}
+                        onChange={(event) => setPasswordVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="000000"
+                        inputMode="numeric"
+                        required
+                      />
+                    </div>
+                    <button type="submit">Confirmar código</button>
+                    <button type="button" className="secondary" onClick={closePasswordCodeModal}>Cancelar</button>
+                  </form>
+                </div>
+              ) : null}
+            </>
           )}
         </section>
       </section>

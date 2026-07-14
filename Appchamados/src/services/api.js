@@ -92,6 +92,12 @@ export const api = {
     register(formData) {
       return request('/auth/register', { method: 'POST', body: formData, formData: true, token: null })
     },
+    confirmRegistrationEmail(payload) {
+      return request('/auth/confirm-registration-email', { method: 'POST', body: payload, token: null })
+    },
+    resendRegistrationEmail(email) {
+      return request('/auth/resend-registration-email', { method: 'POST', body: { email }, token: null })
+    },
     login(payload) {
       return request('/auth/login', { method: 'POST', body: payload, token: null })
     },
@@ -126,6 +132,12 @@ export const api = {
     },
     confirmPhoneChange(code) {
       return request('/profile/confirm-phone-change', { method: 'POST', body: { code } })
+    },
+    requestPasswordChange(payload) {
+      return request('/profile/request-password-change', { method: 'POST', body: payload })
+    },
+    confirmPasswordChange(code) {
+      return request('/profile/confirm-password-change', { method: 'POST', body: { code } })
     },
     changePassword(payload) {
       return request('/profile/change-password', { method: 'POST', body: payload })

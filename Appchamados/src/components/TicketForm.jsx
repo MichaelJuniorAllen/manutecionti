@@ -1,11 +1,35 @@
 import { useState } from 'react'
 import { PRIORITY_OPTIONS } from '../utils/tickets'
 
+const RESPONSIBLE_OPTIONS = ['TI', 'Manutenção']
+
+const ALLOWED_TICKET_EMAILS = [
+  'scihupacentral@maoamigacaxias.org.br',
+  'nutricionistaupacentral@maoamigacaxias.org.br',
+  'coordadmupacentral@maoamigacaxias.org.br',
+  'coordinfraestruraupacentral@maoamigacaxias.org.br',
+  'educacaocontinuadaupacentral@maoamigacaxias.org.br',
+  'farmaceuticaclinicaupacentral@maoamigacaxias.org.br',
+  'coordfarmaciaupacentral@maoamigacaxias.org.br',
+  'diretorclinicoupacentral@maoamigacaxias.org.br',
+  'coordmedicoupacentral@maoamigacaxias.org.br',
+  'faturamentoupacentral@maoamigacaxias.org.br',
+  'tiupacentral@maoamigacaxias.org.br',
+  'manutencaoupacentral@maoamigacaxias.org.br',
+  'sesmtupacentral@maoamigacaxias.org.br',
+  'assistentesocialupacentral@maoamigacaxias.org.br',
+  'recpcaoupacentral@maoamigacaxias.org.br',
+  'enfermagemupacentral@maoamigacaxias.org.br',
+  'odontologiaupacentral@maoamigacaxias.org.br',
+  'coordenfermagemupacentral@maoamigacaxias.org.br',
+]
+
 function TicketForm({ onSubmitTicket, onNavigate }) {
   const [formValues, setFormValues] = useState({
     title: '',
     area: '',
     requester: '',
+    corporateEmail: '',
     priority: 'media',
     responsible: '',
     description: '',
@@ -23,11 +47,17 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
     setLoading(true)
 
     try {
+      const normalizedCorporateEmail = String(formValues.corporateEmail || '').trim().toLowerCase()
+      if (!ALLOWED_TICKET_EMAILS.includes(normalizedCorporateEmail)) {
+        throw new Error('Digite um e-mail corporativo autorizado para registrar o chamado.')
+      }
+
       await onSubmitTicket?.(formValues)
       setFormValues({
         title: '',
         area: '',
         requester: '',
+        corporateEmail: '',
         priority: 'media',
         responsible: '',
         description: '',
@@ -110,6 +140,19 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
                 />
               </div>
             </div>
+            <div className="field">
+              <label htmlFor="corporateEmail">E-mail corporativo *</label>
+              <input
+                id="corporateEmail"
+                name="corporateEmail"
+                type="email"
+                required
+                placeholder="Digite o e-mail corporativo autorizado"
+                value={formValues.corporateEmail}
+                onChange={handleChange}
+                className="form-input"
+              />
+            </div>
           </div>
 
           <div className="form-section">
@@ -134,14 +177,18 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
               </div>
               <div className="field">
                 <label htmlFor="responsible">Responsável</label>
-                <input
+                <select
                   id="responsible"
                   name="responsible"
-                  placeholder="Equipe/colaborador designado"
                   value={formValues.responsible}
                   onChange={handleChange}
                   className="form-input"
-                />
+                >
+                  <option value="">Selecione</option>
+                  {RESPONSIBLE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>

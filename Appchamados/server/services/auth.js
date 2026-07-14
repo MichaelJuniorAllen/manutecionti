@@ -41,15 +41,25 @@ export function verifyToken(token) {
 }
 
 export function sanitizeUser(user) {
+  const rawName = String(user?.nome || '').trim().replace(/\s+/g, ' ')
+  const rawSurname = String(user?.sobrenome || '').trim().replace(/\s+/g, ' ')
+  const rawNameParts = rawName.split(' ').filter(Boolean)
+  const normalizedName = rawNameParts[0] || ''
+  const normalizedSurname = rawSurname || rawNameParts.slice(1).join(' ')
+
   return {
     id: user.id,
-    nome: user.nome,
+    nome: normalizedName,
+    sobrenome: normalizedSurname,
     funcao: normalizeUserRole(user.funcao),
     email: user.email,
     email_reserva: user.email_reserva || null,
+    email_verified: user.email_verified !== false,
     telefone: user.telefone,
     foto_perfil: user.foto_perfil || null,
     data_cadastro: user.data_cadastro,
     ultimo_acesso: user.ultimo_acesso,
   }
 }
+
+export { normalizeUserRole }

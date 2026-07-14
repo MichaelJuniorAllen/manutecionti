@@ -48,7 +48,10 @@ export function AuthProvider({ children }) {
   async function register(values) {
     const formData = new FormData()
     formData.append('nome', values.nome)
+    formData.append('sobrenome', values.sobrenome)
+    formData.append('funcao', values.funcao)
     formData.append('email', values.email)
+    formData.append('email_reserva', values.emailCorporativo)
     formData.append('telefone', values.telefone)
     formData.append('senha', values.senha)
     formData.append('confirmarSenha', values.confirmarSenha)
@@ -57,9 +60,18 @@ export function AuthProvider({ children }) {
     }
 
     const result = await api.auth.register(formData)
+    return result
+  }
+
+  async function confirmRegistrationEmail(email, code) {
+    const result = await api.auth.confirmRegistrationEmail({ email, code })
     setStoredToken(result.token)
     await syncUserFromProfile(result.user)
     return result
+  }
+
+  async function resendRegistrationEmail(email) {
+    return api.auth.resendRegistrationEmail(email)
   }
 
   function logout() {
@@ -80,6 +92,8 @@ export function AuthProvider({ children }) {
       isAuthenticated: Boolean(user),
       login,
       register,
+      confirmRegistrationEmail,
+      resendRegistrationEmail,
       logout,
       refreshUser,
       setUser,

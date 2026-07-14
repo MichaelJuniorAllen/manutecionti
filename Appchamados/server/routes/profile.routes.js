@@ -3,9 +3,9 @@ import multer from 'multer'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { requireAuth } from '../middleware/auth.js'
-import { comparePassword, hashPassword, sanitizeUser } from '../services/auth.js'
+import { comparePassword, hashPassword, normalizeUserRole, sanitizeUser } from '../services/auth.js'
 import { mutateDatabase, nowIso } from '../services/database.js'
-import { getEmailProviderStatus, isSmtpConfigured, sendEmailChangeCode } from '../services/mailer.js'
+import { getEmailProviderStatus, isSmtpConfigured, sendEmailChangeCode, sendPasswordChangeCode } from '../services/mailer.js'
 import { getSmsConfigurationStatus, isSmsConfigured, sendPhoneChangeCode } from '../services/sms.js'
 
 const router = express.Router()
@@ -45,14 +45,11 @@ function isValidPhone(value = '') {
   return digits.length === 10 || digits.length === 11
 }
 
-function normalizeRole(value = '') {
-  const role = String(value).trim().toLowerCase()
-  if (role === 'ti') return 'TI'
-  if (role === 'manutenção' || role === 'manutencao' || role === 'manutenção ti' || role === 'manutencao ti') {
-    return 'Manutenção'
-  }
-  return ''
+function normalizeName(value = '') {
+  return String(value || '').trim().replace(/\s+/g, ' ')
 }
+
+const PASSWORD_CHANGE_CODE_EXPIRES_MINUTES = 15
 
 router.get('/me', requireAuth, async (req, res) => {
   return res.json({ user: sanitizeUser(req.auth.user) })
@@ -69,20 +66,22 @@ router.get('/sms-status', requireAuth, async (_, res) => {
 
 router.put('/me', requireAuth, upload.single('foto'), async (req, res) => {
   const hasNomeField = Object.prototype.hasOwnProperty.call(req.body, 'nome')
+  const hasSobrenomeField = Object.prototype.hasOwnProperty.call(req.body, 'sobrenome')
   const hasTelefoneField = Object.prototype.hasOwnProperty.call(req.body, 'telefone')
   const hasFuncaoField = Object.prototype.hasOwnProperty.call(req.body, 'funcao')
 
-  const nome = (req.body.nome || '').trim()
+  const nome = normalizeName(req.body.nome)
+  const sobrenome = normalizeName(req.body.sobrenome)
   const telefone = normalizePhone(req.body.telefone)
-  const funcao = normalizeRole(req.body.funcao || '')
+  const funcao = normalizeUserRole(req.body.funcao || '')
   const senha = req.body.senha || ''
 
-  if (!hasNomeField && !hasTelefoneField && !hasFuncaoField && !senha && !req.file) {
+  if (!hasNomeField && !hasSobrenomeField && !hasTelefoneField && !hasFuncaoField && !senha && !req.file) {
     return res.status(400).json({ message: 'Nenhum dado foi enviado para atualização.' })
   }
 
-  if (hasNomeField && !nome) {
-    return res.status(400).json({ message: 'Nome não pode ficar vazio.' })
+  if ((hasNomeField && !nome) || (hasSobrenomeField && !sobrenome)) {
+    return res.status(400).json({ message: 'Nome e sobrenome não podem ficar vazios.' })
   }
 
   if (hasTelefoneField && !telefone) {
@@ -105,8 +104,12 @@ router.put('/me', requireAuth, upload.single('foto'), async (req, res) => {
         }
       }
 
-      if (hasNomeField) {
-        user.nome = nome
+      if (hasNomeField || hasSobrenomeField) {
+        const nextNome = hasNomeField ? nome : normalizeName(user.nome).split(' ')[0] || ''
+        const fallbackSurname = normalizeName(user.sobrenome || '') || normalizeName(user.nome).split(' ').slice(1).join(' ')
+        const nextSobrenome = hasSobrenomeField ? sobrenome : fallbackSurname
+        user.nome = `${nextNome} ${nextSobrenome}`.trim()
+        user.sobrenome = nextSobrenome
       }
       if (hasTelefoneField) {
         user.telefone = telefone
@@ -387,6 +390,98 @@ router.post('/change-password', requireAuth, async (req, res) => {
     return res.json({ message: 'Senha alterada com sucesso.' })
   } catch (error) {
     return res.status(400).json({ message: error.message || 'Não foi possível alterar a senha.' })
+  }
+})
+
+router.post('/request-password-change', requireAuth, async (req, res) => {
+  const currentPassword = req.body.currentPassword || ''
+  const newPassword = req.body.newPassword || ''
+  const emailStatus = getEmailProviderStatus()
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Informe a senha atual e a nova senha.' })
+  }
+
+  if (newPassword.length < 8) {
+    return res.status(400).json({ message: 'A nova senha deve ter no mínimo 8 caracteres.' })
+  }
+
+  try {
+    let userEmail = ''
+    let userName = ''
+    let code = ''
+
+    await mutateDatabase(async (db) => {
+      const user = db.usuarios.find((item) => item.id === req.auth.user.id)
+      const matches = await comparePassword(currentPassword, user.senha_hash)
+      if (!matches) {
+        throw new Error('Senha atual incorreta.')
+      }
+
+      if (await comparePassword(newPassword, user.senha_hash)) {
+        throw new Error('A nova senha deve ser diferente da senha atual.')
+      }
+
+      code = String(Math.floor(100000 + Math.random() * 900000))
+      user.pending_password_change = {
+        code,
+        new_password_hash: await hashPassword(newPassword),
+        requested_at: nowIso(),
+        expires_at: new Date(Date.now() + PASSWORD_CHANGE_CODE_EXPIRES_MINUTES * 60000).toISOString(),
+      }
+
+      userEmail = user.email
+      userName = user.nome
+    })
+
+    const sendResult = await sendPasswordChangeCode({
+      to: userEmail,
+      userName,
+      code,
+      expiresInMinutes: PASSWORD_CHANGE_CODE_EXPIRES_MINUTES,
+    })
+
+    return res.json({
+      message: 'Código enviado para seu e-mail pessoal. Confirme para concluir a troca de senha.',
+      smtpConfigured: isSmtpConfigured(),
+      emailProvider: emailStatus.provider,
+      ...(isSmtpConfigured() || process.env.NODE_ENV === 'production' ? {} : { debugCode: code }),
+      ...(sendResult.mode === 'fallback' ? { debugCode: code } : {}),
+    })
+  } catch (error) {
+    return res.status(400).json({ message: error.message || 'Não foi possível solicitar troca de senha.' })
+  }
+})
+
+router.post('/confirm-password-change', requireAuth, async (req, res) => {
+  const code = String(req.body.code || '').trim()
+
+  if (!code) {
+    return res.status(400).json({ message: 'Informe o código de confirmação.' })
+  }
+
+  try {
+    await mutateDatabase(async (db) => {
+      const user = db.usuarios.find((item) => item.id === req.auth.user.id)
+      const pending = user.pending_password_change
+
+      if (!pending || pending.code !== code) {
+        throw new Error('Código inválido para troca de senha.')
+      }
+
+      const expiresAtMs = new Date(pending.expires_at || 0).getTime()
+      if (!Number.isFinite(expiresAtMs) || Date.now() > expiresAtMs) {
+        delete user.pending_password_change
+        throw new Error('Código expirado. Solicite um novo código para trocar a senha.')
+      }
+
+      user.senha_hash = pending.new_password_hash
+      delete user.pending_password_change
+    })
+
+    return res.json({ message: 'Senha atualizada com sucesso.' })
+  } catch (error) {
+    return res.status(400).json({ message: error.message || 'Não foi possível confirmar troca de senha.' })
   }
 })
 

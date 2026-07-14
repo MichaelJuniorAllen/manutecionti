@@ -1228,21 +1228,26 @@ textarea {
 .auth-page {
   display: grid;
   place-items: center;
+  padding: 12px 0 28px;
 }
 
 .auth-card {
-  width: min(760px, 100%);
+  width: min(840px, 100%);
+  overflow: hidden;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcf8 100%);
 }
 
 .auth-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
   border-bottom: 1px solid var(--line);
+  background: #eef3ea;
 }
 
 .auth-tabs button {
   border-radius: 0;
-  background: #eef3ea;
+  background: transparent;
   color: #354533;
   min-height: 48px;
 }
@@ -1255,8 +1260,86 @@ textarea {
 
 .auth-form {
   display: grid;
+  gap: 14px;
+  padding: 22px;
+}
+
+.register-photo-panel {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8faf5 0%, #ffffff 100%);
+}
+
+.register-photo-preview {
+  display: grid;
+  place-items: center;
+}
+
+.register-photo-preview img,
+.register-photo-placeholder {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #cad4c3;
+  box-shadow: 0 10px 24px rgba(36, 45, 34, 0.12);
+}
+
+.register-photo-placeholder {
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 30% 30%, #edf4ea 0%, #dbe6d5 100%);
+  color: #5c6a57;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.register-photo-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.register-photo-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.register-photo-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.auth-form .register-photo-buttons button.secondary {
+  min-height: 42px;
+}
+
+.auth-form .field {
+  gap: 7px;
+}
+
+.auth-form .row {
   gap: 12px;
-  padding: 18px;
+}
+
+.auth-form input[type="file"] {
+  min-height: 46px;
+  padding: 10px;
+  background: #f7faf5;
+}
+
+.auth-form button[type="submit"] {
+  min-height: 46px;
+  margin-top: 4px;
 }
 
 .link-btn {

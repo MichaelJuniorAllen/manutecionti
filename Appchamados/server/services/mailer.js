@@ -63,16 +63,37 @@ async function sendEmailViaSendGrid({ to, subject, text, html }) {
   }
 }
 
-export async function sendEmailChangeCode({ to, userName, code, expiresInMinutes }) {
+async function sendVerificationEmail({ to, subject, text, html, fallbackLabel, code }) {
   if (!to || !code) {
     throw new Error('Dados insuficientes para enviar e-mail de confirmação.')
   }
 
   if (!apiEmailConfigured && !smtpConfigured) {
-    console.log(`[SMTP-FALLBACK] Codigo de confirmacao para ${to}: ${code}`)
+    console.log(`[SMTP-FALLBACK] ${fallbackLabel} para ${to}: ${code}`)
     return { mode: 'fallback' }
   }
 
+  if (apiEmailConfigured) {
+    await sendEmailViaSendGrid({ to, subject, text, html })
+    return { mode: 'sendgrid' }
+  }
+
+  try {
+    await transporter.sendMail({
+      from: smtpFrom,
+      to,
+      subject,
+      text,
+      html,
+    })
+
+    return { mode: 'smtp' }
+  } catch {
+    throw new Error('Nao foi possivel enviar o codigo por e-mail. Verifique a configuracao SMTP/API.')
+  }
+}
+
+export async function sendEmailChangeCode({ to, userName, code, expiresInMinutes }) {
   const subject = 'Codigo de confirmacao de alteracao de e-mail'
   const text = [
     `Ola, ${userName || 'usuario'}!`,
@@ -95,22 +116,78 @@ export async function sendEmailChangeCode({ to, userName, code, expiresInMinutes
     </div>
   `
 
-  if (apiEmailConfigured) {
-    await sendEmailViaSendGrid({ to, subject, text, html })
-    return { mode: 'sendgrid' }
-  }
+  return sendVerificationEmail({
+    to,
+    subject,
+    text,
+    html,
+    fallbackLabel: 'Codigo de confirmacao de alteracao de e-mail',
+    code,
+  })
+}
 
-  try {
-    await transporter.sendMail({
-      from: smtpFrom,
-      to,
-      subject,
-      text,
-      html,
-    })
+export async function sendRegistrationVerificationCode({ to, userName, code, expiresInMinutes }) {
+  const subject = 'Codigo de confirmacao de cadastro'
+  const text = [
+    `Ola, ${userName || 'usuario'}!`,
+    '',
+    'Recebemos seu cadastro no sistema de chamados.',
+    `Seu codigo de confirmacao e: ${code}`,
+    `Este codigo expira em ${expiresInMinutes} minutos.`,
+    '',
+    'Se voce nao solicitou este cadastro, ignore este e-mail.',
+  ].join('\n')
 
-    return { mode: 'smtp' }
-  } catch {
-    throw new Error('Nao foi possivel enviar o codigo por e-mail. Verifique a configuracao SMTP/API.')
-  }
+  const html = `
+    <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.5; color: #20251f;">
+      <h2 style="margin-bottom: 8px;">Confirmacao de cadastro</h2>
+      <p>Ola, <strong>${userName || 'usuario'}</strong>.</p>
+      <p>Recebemos seu cadastro no sistema de chamados.</p>
+      <p style="font-size: 22px; letter-spacing: 2px; font-weight: 700; margin: 16px 0;">${code}</p>
+      <p>Este codigo expira em ${expiresInMinutes} minutos.</p>
+      <p>Se voce nao solicitou este cadastro, ignore este e-mail.</p>
+    </div>
+  `
+
+  return sendVerificationEmail({
+    to,
+    subject,
+    text,
+    html,
+    fallbackLabel: 'Codigo de confirmacao de cadastro',
+    code,
+  })
+}
+
+export async function sendPasswordChangeCode({ to, userName, code, expiresInMinutes }) {
+  const subject = 'Codigo de confirmacao para troca de senha'
+  const text = [
+    `Ola, ${userName || 'usuario'}!`,
+    '',
+    'Recebemos uma solicitacao para trocar sua senha.',
+    `Seu codigo de confirmacao e: ${code}`,
+    `Este codigo expira em ${expiresInMinutes} minutos.`,
+    '',
+    'Se voce nao solicitou essa alteracao, ignore este e-mail.',
+  ].join('\n')
+
+  const html = `
+    <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.5; color: #20251f;">
+      <h2 style="margin-bottom: 8px;">Confirmacao de troca de senha</h2>
+      <p>Ola, <strong>${userName || 'usuario'}</strong>.</p>
+      <p>Recebemos uma solicitacao para trocar sua senha.</p>
+      <p style="font-size: 22px; letter-spacing: 2px; font-weight: 700; margin: 16px 0;">${code}</p>
+      <p>Este codigo expira em ${expiresInMinutes} minutos.</p>
+      <p>Se voce nao solicitou essa alteracao, ignore este e-mail.</p>
+    </div>
+  `
+
+  return sendVerificationEmail({
+    to,
+    subject,
+    text,
+    html,
+    fallbackLabel: 'Codigo de confirmacao para troca de senha',
+    code,
+  })
 }

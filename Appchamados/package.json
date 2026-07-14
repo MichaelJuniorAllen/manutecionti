@@ -4,11 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "concurrently \"npm:server\" \"npm:client\"",
+    "start": "concurrently \"npm:server:dev\" \"npm:client\"",
     "dev": "concurrently \"npm:server:dev\" \"npm:client\"",
     "client": "vite",
     "server": "node server/index.js",
-    "server:dev": "nodemon server/index.js",
+    "server:dev": "nodemon --watch server --ext js,mjs,cjs,json --ignore server/data/database.json --ignore public/uploads/** server/index.js",
     "migrate:json-to-postgres": "node server/scripts/migrate-json-to-postgres.js",
     "build": "vite build",
     "lint": "oxlint",

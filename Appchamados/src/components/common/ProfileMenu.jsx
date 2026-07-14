@@ -1,6 +1,21 @@
 import { Link } from 'react-router-dom'
 import Avatar from './Avatar'
 
+function getFullName(user) {
+  const firstName = String(user?.nome || '').trim()
+  const lastName = String(user?.sobrenome || '').trim()
+
+  if (firstName && lastName) {
+    if (firstName.toLowerCase().endsWith(` ${lastName.toLowerCase()}`) || firstName.toLowerCase() === lastName.toLowerCase()) {
+      return firstName
+    }
+
+    return `${firstName} ${lastName}`
+  }
+
+  return firstName || 'Usuário'
+}
+
 function ProfileMenu({ user, open, onToggle, onClose, onLogout }) {
   return (
     <div className="profile-menu-wrapper">
@@ -13,7 +28,7 @@ function ProfileMenu({ user, open, onToggle, onClose, onLogout }) {
           <div className="profile-card">
             <Avatar user={user} size={52} />
             <div>
-              <strong>{user?.nome}</strong>
+              <strong>{getFullName(user)}</strong>
               <p>{user?.funcao || 'TI'}</p>
             </div>
           </div>

@@ -2,7 +2,8 @@
   "usuarios": [
     {
       "id": "1",
-      "nome": "michael",
+      "nome": "Michael Reyes",
+      "sobrenome": "Reyes",
       "email": "michaelreyesallen@gmail.com",
       "telefone": "54997133510",
       "senha_hash": "$2b$10$f2PzIRDy89DEqnX/9v4fM.yRqZeuckHhaVK9oAh2aoojZRQAZSgJm",
@@ -10,7 +11,25 @@
       "data_cadastro": "2026-07-08T01:52:00.307Z",
       "ultimo_acesso": "2026-07-12T21:20:58.054Z",
       "funcao": "TI",
-      "email_reserva": "tiupacentral@maoamigacaxias.org.br"
+      "email_reserva": "tiupacentral@maoamigacaxias.org.br",
+      "pending_email_change": {
+        "new_email": "michaelreyesallen@gmail.com",
+        "code": "962891",
+        "requested_at": "2026-07-14T18:36:34.994Z",
+        "expires_at": "2026-07-14T18:51:34.994Z"
+      },
+      "pending_phone_change": {
+        "new_phone": "54997133510",
+        "code": "771121",
+        "requested_at": "2026-07-14T18:36:05.141Z",
+        "expires_at": "2026-07-14T18:46:05.141Z"
+      },
+      "pending_password_change": {
+        "code": "180323",
+        "new_password_hash": "$2b$10$Gdvew0xWCGcozAyaCdrQlOMTjSVf3ENZgerC54wKb4nYuOUEZmyQ2",
+        "requested_at": "2026-07-14T18:42:37.471Z",
+        "expires_at": "2026-07-14T18:57:37.471Z"
+      }
     },
     {
       "id": "2",
@@ -26,6 +45,28 @@
     }
   ],
   "chamados": [
+    {
+      "id": "19",
+      "numero_chamado": "CH-20260714-773840",
+      "usuario_id": null,
+      "solicitante": "dr andrian",
+      "titulo": "telefone",
+      "descricao": "telefone não liga",
+      "area": "consultorio 8",
+      "prioridade": "media",
+      "status": "Aberto",
+      "tecnico_responsavel": "TI",
+      "data_abertura": "2026-07-14T16:58:01.172Z",
+      "data_fechamento": null,
+      "tempo_resolucao": null,
+      "tempo_andamento": null,
+      "observacoes": "telefone não liga",
+      "due_at": "2026-07-14T19:58:01.172Z",
+      "atendente_id": null,
+      "atendente_nome": null,
+      "atendente_foto_perfil": null,
+      "data_atendimento": null
+    },
     {
       "id": "18",
       "numero_chamado": "CH-20260712-979746",
@@ -393,6 +434,14 @@
     }
   ],
   "historico": [
+    {
+      "id": "55",
+      "chamado_id": "19",
+      "usuario_id": null,
+      "acao_realizada": "Chamado criado",
+      "data": "2026-07-14T16:58:01.172Z",
+      "observacoes": "telefone não liga"
+    },
     {
       "id": "54",
       "chamado_id": "18",
