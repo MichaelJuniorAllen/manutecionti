@@ -1,8 +1,8 @@
 const provider = String(process.env.SMS_PROVIDER || 'twilio').trim().toLowerCase()
-const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || ''
-const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || ''
-const twilioFromNumber = process.env.TWILIO_FROM_NUMBER || ''
-const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID || ''
+const twilioAccountSid = String(process.env.TWILIO_ACCOUNT_SID || '').trim()
+const twilioAuthToken = String(process.env.TWILIO_AUTH_TOKEN || '').trim()
+const twilioFromNumber = String(process.env.TWILIO_FROM_NUMBER || '').trim()
+const twilioMessagingServiceSid = String(process.env.TWILIO_MESSAGING_SERVICE_SID || '').trim()
 const defaultCountryCode = String(process.env.SMS_DEFAULT_COUNTRY_CODE || '55').replace(/\D/g, '')
 
 const smsConfigured = provider === 'twilio'
@@ -10,6 +10,44 @@ const smsConfigured = provider === 'twilio'
 
 function normalizeMessagingServiceSid(value = '') {
   return String(value || '').trim()
+}
+
+function normalizeFromSender(value = '') {
+  const sender = String(value || '').trim()
+  if (!sender) return ''
+
+  if (/^whatsapp:/i.test(sender)) {
+    const rawPhone = sender.split(':').slice(1).join(':')
+    const normalizedPhone = toE164(rawPhone)
+    return normalizedPhone ? `whatsapp:${normalizedPhone}` : ''
+  }
+
+  if (/^MG[0-9a-fA-F]{32}$/.test(sender)) {
+    return sender
+  }
+
+  const numericPhone = toE164(sender)
+  if (numericPhone) {
+    return numericPhone
+  }
+
+  // Alphanumeric sender IDs are valid in some countries; let Twilio validate this.
+  return sender
+}
+
+function extractTwilioError(raw = '') {
+  const content = String(raw || '').trim()
+  if (!content) return ''
+
+  try {
+    const parsed = JSON.parse(content)
+    const msg = String(parsed?.message || '').trim()
+    const code = parsed?.code ? ` (code ${parsed.code})` : ''
+    return msg ? `${msg}${code}` : content
+  } catch {
+    const compact = content.replace(/\s+/g, ' ').trim()
+    return compact.length > 320 ? `${compact.slice(0, 320)}...` : compact
+  }
 }
 
 function toE164(phone = '') {
@@ -56,8 +94,9 @@ export async function sendPhoneChangeCode({ toPhone, userName, code, expiresInMi
   }
 
   const toPhoneE164 = toE164(toPhone)
-  const fromPhoneE164 = toE164(twilioFromNumber)
-  const messagingServiceSid = normalizeMessagingServiceSid(twilioMessagingServiceSid)
+  const normalizedFromSender = normalizeFromSender(twilioFromNumber)
+  const sidFromField = /^MG[0-9a-fA-F]{32}$/.test(normalizedFromSender) ? normalizedFromSender : ''
+  const messagingServiceSid = normalizeMessagingServiceSid(twilioMessagingServiceSid) || sidFromField
 
   if (!toPhoneE164) {
     throw new Error('Telefone de destino inválido para envio de SMS.')
@@ -70,7 +109,7 @@ export async function sendPhoneChangeCode({ toPhone, userName, code, expiresInMi
 
   const shouldUseMessagingService = Boolean(messagingServiceSid)
 
-  if (!shouldUseMessagingService && !fromPhoneE164) {
+  if (!shouldUseMessagingService && !normalizedFromSender) {
     throw new Error('Telefone de origem inválido em TWILIO_FROM_NUMBER.')
   }
 
@@ -89,7 +128,7 @@ export async function sendPhoneChangeCode({ toPhone, userName, code, expiresInMi
   if (shouldUseMessagingService) {
     payload.set('MessagingServiceSid', messagingServiceSid)
   } else {
-    payload.set('From', fromPhoneE164)
+    payload.set('From', normalizedFromSender)
   }
 
   const auth = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString('base64')
@@ -105,7 +144,10 @@ export async function sendPhoneChangeCode({ toPhone, userName, code, expiresInMi
 
   if (!response.ok) {
     const details = await response.text().catch(() => '')
-    throw new Error(`Nao foi possivel enviar SMS de confirmacao. ${details}`.trim())
+    const twilioReason = extractTwilioError(details)
+    throw new Error(
+      `Nao foi possivel enviar SMS de confirmacao.${twilioReason ? ` ${twilioReason}` : ''}`.trim(),
+    )
   }
 
   return {
