@@ -52,6 +52,7 @@ const CORPORATE_EMAIL_RULES = new Map([
 
 const REGISTRATION_CODE_EXPIRES_MINUTES = 15
 const PASSWORD_RESET_CODE_EXPIRES_MINUTES = 15
+const exposeDebugCodes = String(process.env.EXPOSE_DEBUG_CODES || '').trim().toLowerCase() === 'true'
 
 router.post('/register', upload.single('foto'), async (req, res) => {
   try {
@@ -156,7 +157,7 @@ router.post('/register', upload.single('foto'), async (req, res) => {
       user: sanitizeUser(createdUser),
       verificationRequired: true,
       emailVerificationSent: true,
-      ...(sendResult.mode === 'fallback' || process.env.NODE_ENV !== 'production' ? { debugCode: verificationCode } : {}),
+      ...(exposeDebugCodes ? { debugCode: verificationCode } : {}),
     })
   } catch (error) {
     return res.status(500).json({ message: error.message || 'Erro ao criar conta.' })
@@ -254,7 +255,7 @@ router.post('/resend-registration-email', async (req, res) => {
 
     return res.json({
       message: 'Novo código enviado para o e-mail pessoal.',
-      ...(sendResult.mode === 'fallback' || process.env.NODE_ENV !== 'production' ? { debugCode: verificationCode } : {}),
+      ...(exposeDebugCodes ? { debugCode: verificationCode } : {}),
     })
   } catch (error) {
     return res.status(400).json({ message: error.message || 'Não foi possível reenviar o código.' })
@@ -339,7 +340,7 @@ router.post('/forgot-password', async (req, res) => {
 
     return res.json({
       message: 'Código enviado para o seu e-mail pessoal. Use a próxima tela para redefinir a senha.',
-      ...(sendResult.mode === 'fallback' || process.env.NODE_ENV !== 'production' ? { debugCode: code } : {}),
+      ...(exposeDebugCodes ? { debugCode: code } : {}),
     })
   } catch (error) {
     return res.status(400).json({ message: error.message || 'Não foi possível iniciar a recuperação de senha.' })
