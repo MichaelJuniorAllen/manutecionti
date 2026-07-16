@@ -2,10 +2,15 @@ const provider = String(process.env.SMS_PROVIDER || 'twilio').trim().toLowerCase
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || ''
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || ''
 const twilioFromNumber = process.env.TWILIO_FROM_NUMBER || ''
+const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID || ''
 const defaultCountryCode = String(process.env.SMS_DEFAULT_COUNTRY_CODE || '55').replace(/\D/g, '')
 
 const smsConfigured = provider === 'twilio'
-  && Boolean(twilioAccountSid && twilioAuthToken && twilioFromNumber)
+  && Boolean(twilioAccountSid && twilioAuthToken && (twilioFromNumber || twilioMessagingServiceSid))
+
+function normalizeMessagingServiceSid(value = '') {
+  return String(value || '').trim()
+}
 
 function toE164(phone = '') {
   const trimmed = String(phone || '').trim()
@@ -27,7 +32,9 @@ function getMissingConfig() {
   const missing = []
   if (!twilioAccountSid) missing.push('TWILIO_ACCOUNT_SID')
   if (!twilioAuthToken) missing.push('TWILIO_AUTH_TOKEN')
-  if (!twilioFromNumber) missing.push('TWILIO_FROM_NUMBER')
+  if (!twilioFromNumber && !twilioMessagingServiceSid) {
+    missing.push('TWILIO_FROM_NUMBER ou TWILIO_MESSAGING_SERVICE_SID')
+  }
   return missing
 }
 
@@ -50,6 +57,7 @@ export async function sendPhoneChangeCode({ toPhone, userName, code, expiresInMi
 
   const toPhoneE164 = toE164(toPhone)
   const fromPhoneE164 = toE164(twilioFromNumber)
+  const messagingServiceSid = normalizeMessagingServiceSid(twilioMessagingServiceSid)
 
   if (!toPhoneE164) {
     throw new Error('Telefone de destino inválido para envio de SMS.')
@@ -60,7 +68,9 @@ export async function sendPhoneChangeCode({ toPhone, userName, code, expiresInMi
     return { mode: 'fallback' }
   }
 
-  if (!fromPhoneE164) {
+  const shouldUseMessagingService = Boolean(messagingServiceSid)
+
+  if (!shouldUseMessagingService && !fromPhoneE164) {
     throw new Error('Telefone de origem inválido em TWILIO_FROM_NUMBER.')
   }
 
@@ -73,9 +83,14 @@ export async function sendPhoneChangeCode({ toPhone, userName, code, expiresInMi
   const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`
   const payload = new URLSearchParams({
     To: toPhoneE164,
-    From: fromPhoneE164,
     Body: message,
   })
+
+  if (shouldUseMessagingService) {
+    payload.set('MessagingServiceSid', messagingServiceSid)
+  } else {
+    payload.set('From', fromPhoneE164)
+  }
 
   const auth = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString('base64')
 
@@ -93,5 +108,9 @@ export async function sendPhoneChangeCode({ toPhone, userName, code, expiresInMi
     throw new Error(`Nao foi possivel enviar SMS de confirmacao. ${details}`.trim())
   }
 
-  return { mode: 'sms', to: toPhoneE164 }
+  return {
+    mode: 'sms',
+    to: toPhoneE164,
+    channel: shouldUseMessagingService ? 'messaging-service' : 'from-number',
+  }
 }
