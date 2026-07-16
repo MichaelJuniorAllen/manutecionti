@@ -1,7 +1,5 @@
 import express from 'express'
 import multer from 'multer'
-import path from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { comparePassword, createToken, hashPassword, normalizeUserRole, sanitizeUser } from '../services/auth.js'
 import { mutateDatabase, nextNumericId, nowIso, readDatabase } from '../services/database.js'
 import { requireAuth } from '../middleware/auth.js'
@@ -9,16 +7,8 @@ import { sendRegistrationVerificationCode } from '../services/mailer.js'
 
 const router = express.Router()
 
-const storage = multer.diskStorage({
-  destination: path.resolve(process.cwd(), 'public', 'uploads', 'profiles'),
-  filename: (_, file, callback) => {
-    const extension = path.extname(file.originalname)
-    callback(null, `${Date.now()}-${randomUUID()}${extension}`)
-  },
-})
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_, file, callback) => {
     const mime = file.mimetype.toLowerCase()
@@ -45,6 +35,14 @@ function isValidEmail(value = '') {
 
 function normalizeName(value = '') {
   return String(value || '').trim().replace(/\s+/g, ' ')
+}
+
+function createProfilePhotoValue(file) {
+  if (!file?.buffer?.length) {
+    return null
+  }
+
+  return `data:${file.mimetype};base64,${file.buffer.toString('base64')}`
 }
 
 const CORPORATE_EMAIL_RULES = new Map([
@@ -117,7 +115,7 @@ router.post('/register', upload.single('foto'), async (req, res) => {
 
     const senha_hash = await hashPassword(senha)
     const now = nowIso()
-    const foto_perfil = req.file ? `/uploads/profiles/${req.file.filename}` : null
+    const foto_perfil = createProfilePhotoValue(req.file)
 
     let createdUser
     const verificationCode = String(Math.floor(100000 + Math.random() * 900000))

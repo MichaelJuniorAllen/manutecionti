@@ -1,7 +1,5 @@
 import express from 'express'
 import multer from 'multer'
-import path from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { requireAuth } from '../middleware/auth.js'
 import { comparePassword, hashPassword, normalizeUserRole, sanitizeUser } from '../services/auth.js'
 import { mutateDatabase, nowIso } from '../services/database.js'
@@ -10,16 +8,8 @@ import { getSmsConfigurationStatus, isSmsConfigured, sendPhoneChangeCode } from 
 
 const router = express.Router()
 
-const storage = multer.diskStorage({
-  destination: path.resolve(process.cwd(), 'public', 'uploads', 'profiles'),
-  filename: (_, file, callback) => {
-    const extension = path.extname(file.originalname)
-    callback(null, `${Date.now()}-${randomUUID()}${extension}`)
-  },
-})
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_, file, callback) => {
     const mime = file.mimetype.toLowerCase()
@@ -47,6 +37,14 @@ function isValidPhone(value = '') {
 
 function normalizeName(value = '') {
   return String(value || '').trim().replace(/\s+/g, ' ')
+}
+
+function createProfilePhotoValue(file) {
+  if (!file?.buffer?.length) {
+    return null
+  }
+
+  return `data:${file.mimetype};base64,${file.buffer.toString('base64')}`
 }
 
 const PASSWORD_CHANGE_CODE_EXPIRES_MINUTES = 15
@@ -118,7 +116,7 @@ router.put('/me', requireAuth, upload.single('foto'), async (req, res) => {
         user.funcao = funcao
       }
       if (req.file) {
-        user.foto_perfil = `/uploads/profiles/${req.file.filename}`
+        user.foto_perfil = createProfilePhotoValue(req.file)
       }
 
       if (senha) {

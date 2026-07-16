@@ -1,6 +1,37 @@
 const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : '/api')
 const TOKEN_KEY = 'chamados_token'
 
+export function getApiOrigin() {
+  if (API_BASE.startsWith('http://') || API_BASE.startsWith('https://')) {
+    return new URL(API_BASE).origin
+  }
+
+  if (typeof window !== 'undefined') {
+    return window.location.origin
+  }
+
+  return ''
+}
+
+export function getMediaUrl(pathname = '') {
+  const value = String(pathname || '').trim()
+
+  if (!value) {
+    return ''
+  }
+
+  if (/^(https?:|data:|blob:)/i.test(value)) {
+    return value
+  }
+
+  const origin = getApiOrigin()
+  if (!origin) {
+    return value
+  }
+
+  return `${origin}${value.startsWith('/') ? value : `/${value}`}`
+}
+
 function getApiBaseUrl() {
   if (API_BASE.startsWith('http://') || API_BASE.startsWith('https://')) {
     return API_BASE

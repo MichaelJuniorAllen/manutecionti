@@ -15,7 +15,7 @@ import ProfileMenu from './components/common/ProfileMenu'
 import Avatar from './components/common/Avatar'
 import UserDashboard from './components/UserDashboard'
 import { useAuth } from './context/AuthContext'
-import { api } from './services/api'
+import { api, getMediaUrl } from './services/api'
 import { getCroppedImageFile } from './utils/imageCrop'
 
 const TEN_MINUTES_MS = 10 * 60 * 1000
@@ -75,8 +75,7 @@ function formatPriority(priority = '') {
 
 function getProfilePhotoSrc(user) {
   if (!user?.foto_perfil) return ''
-  if (user.foto_perfil.startsWith('http')) return user.foto_perfil
-  return `${import.meta.env.VITE_SERVER_URL || 'http://localhost:4000'}${user.foto_perfil}`
+  return getMediaUrl(user.foto_perfil)
 }
 
 function playAlertSound() {

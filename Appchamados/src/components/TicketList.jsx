@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatDate, getRemainingMs } from '../utils/tickets'
+import Avatar from './common/Avatar'
 
 function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentUserName = '' }) {
   const [search, setSearch] = useState('')
@@ -139,18 +140,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
 
   function getAttendantAvatar(ticket) {
     if (!ticket?.atendenteFotoPerfil) return null
-    if (ticket.atendenteFotoPerfil.startsWith('http')) {
-      return ticket.atendenteFotoPerfil
-    }
-    return `${import.meta.env.VITE_SERVER_URL || 'http://localhost:4000'}${ticket.atendenteFotoPerfil}`
-  }
-
-  function getInitials(name = '') {
-    const parts = name.trim().split(/\s+/).filter(Boolean)
-    if (!parts.length) return 'AT'
-    const first = parts[0]?.[0] || ''
-    const last = parts.length > 1 ? parts[parts.length - 1]?.[0] || '' : ''
-    return `${first}${last}`.toUpperCase()
+    return ticket.atendenteFotoPerfil
   }
 
   function normalize(value = '') {
@@ -253,11 +243,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
                 {ticket.status === 'Em andamento' && (
                   <>
                     <div className="attendant-chip" title={`Atendendo: ${attendantName}`}>
-                      {attendantAvatar ? (
-                        <img src={attendantAvatar} alt={attendantName} className="attendant-avatar" />
-                      ) : (
-                        <span className="attendant-avatar fallback">{getInitials(attendantName)}</span>
-                      )}
+                      <Avatar name={attendantName} photoUrl={attendantAvatar} size={22} />
                       <span className="attendant-label">Em atendimento por {attendantName}</span>
                     </div>
                     <div className="attendant-chip" title="Tempo em andamento">

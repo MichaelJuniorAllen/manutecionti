@@ -1,3 +1,6 @@
+import { useEffect, useMemo, useState } from 'react'
+import { getMediaUrl } from '../../services/api'
+
 function getInitials(name = '') {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   if (!parts.length) return 'US'
@@ -6,20 +9,31 @@ function getInitials(name = '') {
   return `${first}${last}`.toUpperCase()
 }
 
-function Avatar({ user, size = 40 }) {
+function Avatar({ user, size = 40, name, photoUrl }) {
   const style = { width: `${size}px`, height: `${size}px` }
+  const displayName = String(name ?? user?.nome ?? '').trim()
+  const resolvedPhotoUrl = useMemo(() => getMediaUrl(photoUrl ?? user?.foto_perfil ?? ''), [photoUrl, user?.foto_perfil])
+  const [imageFailed, setImageFailed] = useState(false)
 
-  if (user?.foto_perfil) {
-    const src = user.foto_perfil.startsWith('http')
-      ? user.foto_perfil
-      : `${import.meta.env.VITE_SERVER_URL || 'http://localhost:4000'}${user.foto_perfil}`
+  useEffect(() => {
+    setImageFailed(false)
+  }, [resolvedPhotoUrl])
 
-    return <img src={src} alt={user.nome || 'Usuário'} className="avatar" style={style} />
+  if (resolvedPhotoUrl && !imageFailed) {
+    return (
+      <img
+        src={resolvedPhotoUrl}
+        alt={displayName || 'Usuário'}
+        className="avatar"
+        style={style}
+        onError={() => setImageFailed(true)}
+      />
+    )
   }
 
   return (
     <div className="avatar avatar-fallback" style={style} aria-label="Avatar do usuário">
-      {getInitials(user?.nome)}
+      {getInitials(displayName)}
     </div>
   )
 }

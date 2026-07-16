@@ -1054,6 +1054,21 @@ textarea {
     padding-top: 14px;
   }
 
+  header {
+    gap: 12px;
+  }
+
+  .top-actions {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .profile-menu-wrapper {
+    display: flex;
+    justify-content: flex-end;
+    width: 100%;
+  }
+
   .row,
   .stats,
   .filters,
@@ -1080,6 +1095,12 @@ textarea {
     width: auto;
   }
 
+  .profile-dropdown {
+    left: auto;
+    right: 0;
+    width: min(92vw, 300px);
+  }
+
   .tickets-filters {
     grid-template-columns: 1fr;
   }
@@ -1090,6 +1111,14 @@ textarea {
 
   .meta-date {
     margin-left: 0;
+  }
+
+  .history-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .history-table {
+    min-width: 760px;
   }
 }
 
