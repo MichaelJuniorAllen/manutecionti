@@ -51,6 +51,7 @@ const CORPORATE_EMAIL_RULES = new Map([
 ])
 
 const REGISTRATION_CODE_EXPIRES_MINUTES = 15
+const PASSWORD_RESET_CODE_EXPIRES_MINUTES = 15
 
 router.post('/register', upload.single('foto'), async (req, res) => {
   try {
@@ -305,9 +306,87 @@ router.post('/forgot-password', async (req, res) => {
     return res.status(400).json({ message: 'Informe o e-mail.' })
   }
 
-  return res.json({
-    message: 'Se o e-mail existir, você receberá instruções para redefinir a senha.',
-  })
+  try {
+    let userName = ''
+    let code = ''
+
+    await mutateDatabase(async (db) => {
+      const user = db.usuarios.find((item) => normalizeEmail(item.email) === email)
+
+      if (!user) {
+        throw new Error('Conta não encontrada para recuperação de senha.')
+      }
+
+      if (user.email_verified === false) {
+        throw new Error('Sua conta ainda não foi validada. Confirme o e-mail de cadastro primeiro.')
+      }
+
+      userName = user.nome
+      code = String(Math.floor(100000 + Math.random() * 900000))
+      user.pending_password_reset = {
+        code,
+        requested_at: nowIso(),
+        expires_at: new Date(Date.now() + PASSWORD_RESET_CODE_EXPIRES_MINUTES * 60000).toISOString(),
+      }
+    })
+
+    const sendResult = await sendRegistrationVerificationCode({
+      to: email,
+      userName,
+      code,
+      expiresInMinutes: PASSWORD_RESET_CODE_EXPIRES_MINUTES,
+    })
+
+    return res.json({
+      message: 'Código enviado para o seu e-mail pessoal. Use a próxima tela para redefinir a senha.',
+      ...(sendResult.mode === 'fallback' || process.env.NODE_ENV !== 'production' ? { debugCode: code } : {}),
+    })
+  } catch (error) {
+    return res.status(400).json({ message: error.message || 'Não foi possível iniciar a recuperação de senha.' })
+  }
+})
+
+router.post('/confirm-password-reset', async (req, res) => {
+  const email = normalizeEmail(req.body.email)
+  const code = String(req.body.code || '').trim()
+  const newPassword = String(req.body.newPassword || '')
+
+  if (!email || !code || !newPassword) {
+    return res.status(400).json({ message: 'Informe e-mail, código e nova senha.' })
+  }
+
+  if (newPassword.length < 8) {
+    return res.status(400).json({ message: 'A nova senha deve ter no mínimo 8 caracteres.' })
+  }
+
+  try {
+    await mutateDatabase(async (db) => {
+      const user = db.usuarios.find((item) => normalizeEmail(item.email) === email)
+
+      if (!user) {
+        throw new Error('Conta não encontrada para recuperação de senha.')
+      }
+
+      const pending = user.pending_password_reset
+      if (!pending || pending.code !== code) {
+        throw new Error('Código inválido para redefinição de senha.')
+      }
+
+      const expiresAtMs = new Date(pending.expires_at || 0).getTime()
+      if (!Number.isFinite(expiresAtMs) || Date.now() > expiresAtMs) {
+        delete user.pending_password_reset
+        throw new Error('Código expirado. Solicite um novo código.')
+      }
+
+      user.senha_hash = await hashPassword(newPassword)
+      delete user.pending_password_reset
+      user.ultimo_acesso = nowIso()
+    })
+
+    return res.json({ message: 'Senha redefinida com sucesso. Faça login novamente.' })
+  } catch (error) {
+    return res.status(400).json({ message: error.message || 'Não foi possível redefinir a senha.' })
+  }
 })
 
 router.get('/session', requireAuth, async (req, res) => {

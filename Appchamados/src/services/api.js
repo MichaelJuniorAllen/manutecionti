@@ -135,6 +135,12 @@ export const api = {
     forgotPassword(email) {
       return request('/auth/forgot-password', { method: 'POST', body: { email }, token: null })
     },
+    requestPasswordReset(email) {
+      return request('/auth/forgot-password', { method: 'POST', body: { email }, token: null })
+    },
+    confirmPasswordReset(payload) {
+      return request('/auth/confirm-password-reset', { method: 'POST', body: payload, token: null })
+    },
     session() {
       return request('/auth/session')
     },

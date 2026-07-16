@@ -9,6 +9,7 @@ import Stats from './components/Stats'
 import TicketForm from './components/TicketForm'
 import TicketList from './components/TicketList'
 import AuthPage from './components/auth/AuthPage'
+import PasswordResetPage from './components/auth/PasswordResetPage'
 import ProtectedRoute from './components/ProtectedRoute'
 import MyHistoryTable from './components/MyHistoryTable'
 import ProfileMenu from './components/common/ProfileMenu'
@@ -408,6 +409,7 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage onNavigate={(target) => navigate(target)} />} />
         <Route path="/autenticacao" element={<AuthPage onNotify={notify} />} />
+        <Route path="/recuperar-senha" element={<PasswordResetPage onNotify={notify} />} />
         <Route
           path="/novo-chamado"
           element={<NewTicketPage onNotify={notify} />}

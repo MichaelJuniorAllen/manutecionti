@@ -53,6 +53,14 @@ function AuthPage({ onNotify }) {
     }
   }, [registerFotoPreviewUrl])
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const email = params.get('email')
+    if (email && !loginForm.email) {
+      setLoginForm((current) => ({ ...current, email }))
+    }
+  }, [location.search, loginForm.email])
+
   function updateLoginField(event) {
     const { name, value } = event.target
     setLoginForm((current) => ({ ...current, [name]: value }))
@@ -220,20 +228,8 @@ function AuthPage({ onNotify }) {
   }
 
   async function handleForgotPassword() {
-    if (!loginForm.email) {
-      onNotify('warning', 'Informe seu e-mail para recuperar a senha.')
-      return
-    }
-
-    try {
-      setForgotLoading(true)
-      const result = await api.auth.forgotPassword(loginForm.email)
-      onNotify('success', result.message)
-    } catch (error) {
-      onNotify('error', error.message)
-    } finally {
-      setForgotLoading(false)
-    }
+    const email = String(loginForm.email || '').trim()
+    navigate(email ? `/recuperar-senha?email=${encodeURIComponent(email)}` : '/recuperar-senha')
   }
 
   return (
