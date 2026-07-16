@@ -1,15 +1,21 @@
 import nodemailer from 'nodemailer'
+import { Resend } from 'resend'
 
 const smtpHost = process.env.SMTP_HOST
 const smtpPort = Number(process.env.SMTP_PORT || 587)
 const smtpUser = process.env.SMTP_USER
 const smtpPass = process.env.SMTP_PASS
 const smtpFrom = process.env.SMTP_FROM || smtpUser || 'no-reply@appchamados.local'
+const resendApiKey = process.env.RESEND_API_KEY || ''
+const resendFromAddress = process.env.RESEND_FROM_ADDRESS || process.env.EMAIL_FROM_ADDRESS || smtpFrom
 const emailServiceApiKey = process.env.EMAIL_SERVICE_API_KEY || ''
 const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpFrom
 
 const smtpConfigured = Boolean(smtpHost && smtpPort && smtpUser && smtpPass)
+const resendConfigured = Boolean(resendApiKey && resendFromAddress)
 const apiEmailConfigured = Boolean(emailServiceApiKey && emailFromAddress)
+
+const resendClient = resendConfigured ? new Resend(resendApiKey) : null
 
 const transporter = smtpConfigured
   ? nodemailer.createTransport({
@@ -24,10 +30,14 @@ const transporter = smtpConfigured
   : null
 
 export function isSmtpConfigured() {
-  return smtpConfigured || apiEmailConfigured
+  return smtpConfigured || resendConfigured || apiEmailConfigured
 }
 
 export function getEmailProviderStatus() {
+  if (resendConfigured) {
+    return { configured: true, provider: 'resend' }
+  }
+
   if (apiEmailConfigured) {
     return { configured: true, provider: 'sendgrid' }
   }
@@ -63,14 +73,35 @@ async function sendEmailViaSendGrid({ to, subject, text, html }) {
   }
 }
 
+async function sendEmailViaResend({ to, subject, text, html }) {
+  const payload = {
+    from: resendFromAddress,
+    to: [to],
+    subject,
+    html,
+    text,
+  }
+
+  const { error } = await resendClient.emails.send(payload)
+
+  if (error) {
+    throw new Error(`Nao foi possivel enviar o codigo por e-mail via Resend. ${error.message || ''}`.trim())
+  }
+}
+
 async function sendVerificationEmail({ to, subject, text, html, fallbackLabel, code }) {
   if (!to || !code) {
     throw new Error('Dados insuficientes para enviar e-mail de confirmação.')
   }
 
-  if (!apiEmailConfigured && !smtpConfigured) {
+  if (!resendConfigured && !apiEmailConfigured && !smtpConfigured) {
     console.log(`[SMTP-FALLBACK] ${fallbackLabel} para ${to}: ${code}`)
     return { mode: 'fallback' }
+  }
+
+  if (resendConfigured) {
+    await sendEmailViaResend({ to, subject, text, html })
+    return { mode: 'resend' }
   }
 
   if (apiEmailConfigured) {
