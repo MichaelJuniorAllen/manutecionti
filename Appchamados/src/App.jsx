@@ -152,8 +152,10 @@ function App() {
   const [siteNotice, setSiteNotice] = useState(null)
   const knownTicketIdsRef = useRef(new Set())
   const reminderTimestampsRef = useRef(new Map())
+  const openTicketsByIdRef = useRef(new Map())
   const hasHydratedNotificationStateRef = useRef(false)
   const notificationsEnabledRef = useRef(true)
+  const isSyncingNotificationStateRef = useRef(false)
 
   const pageMeta = useMemo(() => {
     const map = {
@@ -231,6 +233,7 @@ function App() {
     if (!isAuthenticated) {
       knownTicketIdsRef.current = new Set()
       reminderTimestampsRef.current = new Map()
+      openTicketsByIdRef.current = new Map()
       hasHydratedNotificationStateRef.current = false
       notificationsEnabledRef.current = true
       setSiteNotice(null)
@@ -282,11 +285,18 @@ function App() {
     }
 
     async function syncNotificationState() {
+      if (isSyncingNotificationStateRef.current) {
+        return
+      }
+
+      isSyncingNotificationStateRef.current = true
+
       try {
         const result = await api.tickets.mine()
         const allTickets = result.tickets || []
         const openTickets = allTickets.filter((ticket) => ticket.status !== 'Concluído')
         const openTicketIds = new Set(openTickets.map((ticket) => String(ticket.id)))
+        openTicketsByIdRef.current = new Map(openTickets.map((ticket) => [String(ticket.id), ticket]))
 
         if (!hasHydratedNotificationStateRef.current) {
           knownTicketIdsRef.current = new Set(allTickets.map((ticket) => String(ticket.id)))
@@ -311,13 +321,6 @@ function App() {
           const id = String(ticket.id)
           if (!reminderTimestampsRef.current.has(id)) {
             reminderTimestampsRef.current.set(id, now)
-            return
-          }
-
-          const lastNotifiedAt = reminderTimestampsRef.current.get(id) || 0
-          if (now - lastNotifiedAt >= TEN_MINUTES_MS) {
-            notifyTicket(ticket, true)
-            reminderTimestampsRef.current.set(id, now)
           }
         })
 
@@ -330,6 +333,21 @@ function App() {
         knownTicketIdsRef.current = new Set(allTickets.map((ticket) => String(ticket.id)))
       } catch {
         // Não interrompe app se falhar a sincronização de notificações.
+      } finally {
+        isSyncingNotificationStateRef.current = false
+      }
+    }
+
+    async function checkReminderTickets() {
+      const now = Date.now()
+      const openTicketEntries = [...openTicketsByIdRef.current.entries()]
+
+      for (const [id, ticket] of openTicketEntries) {
+        const lastNotifiedAt = reminderTimestampsRef.current.get(id) || 0
+        if (now - lastNotifiedAt >= TEN_MINUTES_MS) {
+          await notifyTicket(ticket, true)
+          reminderTimestampsRef.current.set(id, now)
+        }
       }
     }
 
@@ -351,10 +369,12 @@ function App() {
 
     syncNotificationState()
     const periodicSync = window.setInterval(syncNotificationState, 10000)
+    const reminderInterval = window.setInterval(checkReminderTickets, 30000)
     window.addEventListener('storage', handleStorage)
 
     return () => {
       window.clearInterval(periodicSync)
+      window.clearInterval(reminderInterval)
       window.removeEventListener('storage', handleStorage)
       eventSource?.close()
     }
