@@ -19,7 +19,6 @@ import { useAuth } from './context/AuthContext'
 import { api, getMediaUrl } from './services/api'
 import { getCroppedImageFile } from './utils/imageCrop'
 
-const TEN_MINUTES_MS = 10 * 60 * 1000
 const ROLE_OPTIONS = ['Manutenção', 'TI']
 
 function getFullName(user) {
@@ -151,8 +150,6 @@ function App() {
   const [toast, setToast] = useState(null)
   const [siteNotice, setSiteNotice] = useState(null)
   const knownTicketIdsRef = useRef(new Set())
-  const reminderTimestampsRef = useRef(new Map())
-  const openTicketsByIdRef = useRef(new Map())
   const hasHydratedNotificationStateRef = useRef(false)
   const notificationsEnabledRef = useRef(true)
   const isSyncingNotificationStateRef = useRef(false)
@@ -232,8 +229,6 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated) {
       knownTicketIdsRef.current = new Set()
-      reminderTimestampsRef.current = new Map()
-      openTicketsByIdRef.current = new Map()
       hasHydratedNotificationStateRef.current = false
       notificationsEnabledRef.current = true
       setSiteNotice(null)
@@ -295,39 +290,18 @@ function App() {
         const result = await api.tickets.mine()
         const allTickets = result.tickets || []
         const openTickets = allTickets.filter((ticket) => ticket.status !== 'Concluído')
-        const openTicketIds = new Set(openTickets.map((ticket) => String(ticket.id)))
-        openTicketsByIdRef.current = new Map(openTickets.map((ticket) => [String(ticket.id), ticket]))
 
         if (!hasHydratedNotificationStateRef.current) {
           knownTicketIdsRef.current = new Set(allTickets.map((ticket) => String(ticket.id)))
-          const now = Date.now()
-          openTickets.forEach((ticket) => {
-            reminderTimestampsRef.current.set(String(ticket.id), now)
-          })
           hasHydratedNotificationStateRef.current = true
           return
         }
 
         const previousKnownIds = knownTicketIdsRef.current
-        const now = Date.now()
 
         const newOpenTickets = openTickets.filter((ticket) => !previousKnownIds.has(String(ticket.id)))
         for (const ticket of newOpenTickets) {
           await notifyTicket(ticket, false)
-          reminderTimestampsRef.current.set(String(ticket.id), now)
-        }
-
-        openTickets.forEach((ticket) => {
-          const id = String(ticket.id)
-          if (!reminderTimestampsRef.current.has(id)) {
-            reminderTimestampsRef.current.set(id, now)
-          }
-        })
-
-        for (const id of [...reminderTimestampsRef.current.keys()]) {
-          if (!openTicketIds.has(String(id))) {
-            reminderTimestampsRef.current.delete(id)
-          }
         }
 
         knownTicketIdsRef.current = new Set(allTickets.map((ticket) => String(ticket.id)))
@@ -335,19 +309,6 @@ function App() {
         // Não interrompe app se falhar a sincronização de notificações.
       } finally {
         isSyncingNotificationStateRef.current = false
-      }
-    }
-
-    async function checkReminderTickets() {
-      const now = Date.now()
-      const openTicketEntries = [...openTicketsByIdRef.current.entries()]
-
-      for (const [id, ticket] of openTicketEntries) {
-        const lastNotifiedAt = reminderTimestampsRef.current.get(id) || 0
-        if (now - lastNotifiedAt >= TEN_MINUTES_MS) {
-          await notifyTicket(ticket, true)
-          reminderTimestampsRef.current.set(id, now)
-        }
       }
     }
 
@@ -360,6 +321,11 @@ function App() {
           const payload = JSON.parse(event.data || '{}')
           if (payload?.type === 'ticket-created' || payload?.type === 'ticket-updated') {
             syncNotificationState()
+            return
+          }
+
+          if (payload?.type === 'ticket-reminder' && payload?.ticket) {
+            notifyTicket(payload.ticket, true)
           }
         } catch {
           // Ignora evento malformado.
@@ -369,12 +335,10 @@ function App() {
 
     syncNotificationState()
     const periodicSync = window.setInterval(syncNotificationState, 10000)
-    const reminderInterval = window.setInterval(checkReminderTickets, 30000)
     window.addEventListener('storage', handleStorage)
 
     return () => {
       window.clearInterval(periodicSync)
-      window.clearInterval(reminderInterval)
       window.removeEventListener('storage', handleStorage)
       eventSource?.close()
     }

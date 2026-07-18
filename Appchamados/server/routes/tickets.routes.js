@@ -34,6 +34,9 @@ const ALLOWED_TICKET_EMAILS = new Set([
 ])
 
 const streamClients = new Set()
+const TEN_MINUTES_MS = 10 * 60 * 1000
+let reminderLoopInitialized = false
+let reminderLoopBusy = false
 
 function normalize(value = '') {
   return value.trim().toLowerCase()
@@ -76,11 +79,71 @@ function sendStreamEvent(res, payload) {
 function broadcastTicketEvent(payload) {
   for (const client of streamClients) {
     try {
-      sendStreamEvent(client, payload)
+      sendStreamEvent(client.res, payload)
     } catch {
       streamClients.delete(client)
     }
   }
+}
+
+async function broadcastReminderEvents() {
+  if (reminderLoopBusy || streamClients.size === 0) {
+    return
+  }
+
+  reminderLoopBusy = true
+
+  try {
+    const db = await readDatabase()
+    const openTickets = db.chamados.filter((ticket) => ticket.status !== 'Concluído')
+    const openTicketIds = new Set(openTickets.map((ticket) => String(ticket.id)))
+    const now = Date.now()
+
+    for (const client of streamClients) {
+      for (const ticketId of [...client.reminderTimestamps.keys()]) {
+        if (!openTicketIds.has(ticketId)) {
+          client.reminderTimestamps.delete(ticketId)
+        }
+      }
+
+      for (const ticket of openTickets) {
+        const id = String(ticket.id)
+        const previousReminderAt = client.reminderTimestamps.get(id)
+
+        if (!Number.isFinite(previousReminderAt)) {
+          client.reminderTimestamps.set(id, now)
+          continue
+        }
+
+        if (now - previousReminderAt < TEN_MINUTES_MS) {
+          continue
+        }
+
+        sendStreamEvent(client.res, {
+          type: 'ticket-reminder',
+          ticket: toTicketResponse(ticket),
+          timestamp: nowIso(),
+        })
+
+        client.reminderTimestamps.set(id, now)
+      }
+    }
+  } catch {
+    // Mantém o stream ativo mesmo em falhas pontuais de leitura.
+  } finally {
+    reminderLoopBusy = false
+  }
+}
+
+function ensureReminderLoop() {
+  if (reminderLoopInitialized) {
+    return
+  }
+
+  reminderLoopInitialized = true
+  setInterval(() => {
+    broadcastReminderEvents()
+  }, 30000)
 }
 
 async function resolveUserFromStreamToken(token) {
@@ -211,8 +274,9 @@ router.get('/stream', async (req, res) => {
     return res.status(401).json({ message: 'Sessão inválida. Faça login novamente.' })
   }
 
+  let user
   try {
-    await resolveUserFromStreamToken(token)
+    user = await resolveUserFromStreamToken(token)
   } catch {
     return res.status(401).json({ message: 'Token expirado ou inválido.' })
   }
@@ -223,20 +287,27 @@ router.get('/stream', async (req, res) => {
   res.flushHeaders?.()
 
   sendStreamEvent(res, { type: 'connected', timestamp: nowIso() })
-  streamClients.add(res)
+  const client = {
+    res,
+    userId: user.id,
+    reminderTimestamps: new Map(),
+  }
+
+  streamClients.add(client)
+  ensureReminderLoop()
 
   const keepAlive = setInterval(() => {
     try {
       res.write(': ping\n\n')
     } catch {
       clearInterval(keepAlive)
-      streamClients.delete(res)
+      streamClients.delete(client)
     }
   }, 25000)
 
   req.on('close', () => {
     clearInterval(keepAlive)
-    streamClients.delete(res)
+    streamClients.delete(client)
   })
 
   return undefined
