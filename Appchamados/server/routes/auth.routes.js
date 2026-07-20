@@ -105,11 +105,6 @@ router.post('/register', upload.single('foto'), async (req, res) => {
       return res.status(409).json({ message: 'Este e-mail pessoal já está cadastrado.' })
     }
 
-    const corporateEmailInUse = db.usuarios.some((user) => normalizeEmail(user.email_reserva) === emailReserva)
-    if (corporateEmailInUse) {
-      return res.status(409).json({ message: 'Este e-mail corporativo já está cadastrado.' })
-    }
-
     const phoneInUse = db.usuarios.some((user) => normalizePhone(user.telefone) === telefone)
     if (phoneInUse) {
       return res.status(409).json({ message: 'Este telefone já está cadastrado.' })

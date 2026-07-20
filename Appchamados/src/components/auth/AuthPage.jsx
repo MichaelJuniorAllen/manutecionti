@@ -319,15 +319,20 @@ function AuthPage({ onNotify }) {
             <div className="row">
               <div className="field">
                 <label htmlFor="registerEmailCorporativo">E-mail corporativo</label>
-                <input
+                <select
                   id="registerEmailCorporativo"
                   name="emailCorporativo"
-                  type="email"
                   value={registerForm.emailCorporativo}
                   onChange={updateRegisterField}
-                  placeholder="Digite o e-mail corporativo autorizado"
                   required
-                />
+                >
+                  <option value="">Selecione o e-mail corporativo</option>
+                  {CORPORATE_EMAIL_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="field">
                 <label htmlFor="registerTelefone">Telefone</label>
