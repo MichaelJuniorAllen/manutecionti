@@ -7,7 +7,7 @@ const smtpUser = process.env.SMTP_USER
 const smtpPass = process.env.SMTP_PASS
 const smtpFrom = process.env.SMTP_FROM || smtpUser || 'no-reply@appchamados.local'
 const resendApiKey = process.env.RESEND_API_KEY || ''
-const resendFromAddress = process.env.RESEND_FROM_ADDRESS || process.env.EMAIL_FROM_ADDRESS || smtpFrom
+const resendFromAddress = String(process.env.RESEND_FROM_ADDRESS || '').trim()
 const emailServiceApiKey = process.env.EMAIL_SERVICE_API_KEY || ''
 const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpFrom
 
@@ -85,6 +85,11 @@ async function sendEmailViaResend({ to, subject, text, html }) {
   const { error } = await resendClient.emails.send(payload)
 
   if (error) {
+    const rawMessage = String(error.message || '').toLowerCase()
+    if (rawMessage.includes('resend.dev') || rawMessage.includes('testing emails') || rawMessage.includes('only send testing')) {
+      throw new Error('Resend em modo de teste. Configure RESEND_FROM_ADDRESS com um remetente do seu dominio verificado para enviar para qualquer destinatario.')
+    }
+
     throw new Error(`Nao foi possivel enviar o codigo por e-mail via Resend. ${error.message || ''}`.trim())
   }
 }
