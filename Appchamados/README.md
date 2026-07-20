@@ -41,15 +41,32 @@ npm run migrate:json-to-postgres
 
 Esse comando copia os dados atuais de `server/data/database.json` para PostgreSQL (tabela `app_state`).
 
-## SMTP para confirmação de e-mail
+## SMTP e Resend para confirmação de e-mail
 
-O sistema já está preparado para envio real do código de confirmação por SMTP.
+O sistema já está preparado para envio real do código de confirmação por SMTP e Resend.
 
 1. Copie `.env.example` para `.env`.
-2. Preencha as variáveis SMTP.
+2. Preencha as variáveis SMTP ou `RESEND_API_KEY`/`RESEND_FROM_ADDRESS`.
 3. Reinicie o `npm start`.
 
-Se SMTP não estiver configurado, o sistema entra em modo fallback local e registra o código no log do servidor para testes.
+Se Resend estiver configurado, ele passa a ser o provedor principal de e-mail. Sem SMTP/Resend, o sistema entra em modo fallback local e registra o código no log do servidor para testes.
+
+### Gerenciar domínio do Resend
+
+O backend expõe rotas autenticadas em `/api/settings/resend-domains` para criar, listar, recuperar, verificar, atualizar e remover domínios do Resend.
+
+Exemplo de criação:
+
+```bash
+POST /api/settings/resend-domains
+{ "name": "upacentral.site" }
+```
+
+Depois de criar o domínio, use o `id` retornado para consultar ou verificar:
+
+```bash
+POST /api/settings/resend-domains/:id/verify
+```
 
 ## Deploy estável (Netlify + Backend externo)
 

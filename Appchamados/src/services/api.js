@@ -221,5 +221,23 @@ export const api = {
     update(payload) {
       return request('/settings/me', { method: 'PUT', body: payload })
     },
+    resendDomains() {
+      return request('/settings/resend-domains')
+    },
+    createResendDomain(name) {
+      return request('/settings/resend-domains', { method: 'POST', body: { name } })
+    },
+    getResendDomain(id) {
+      return request(`/settings/resend-domains/${id}`)
+    },
+    verifyResendDomain(id) {
+      return request(`/settings/resend-domains/${id}/verify`, { method: 'POST' })
+    },
+    updateResendDomain(id, payload) {
+      return request(`/settings/resend-domains/${id}`, { method: 'PUT', body: payload })
+    },
+    removeResendDomain(id) {
+      return request(`/settings/resend-domains/${id}`, { method: 'DELETE' })
+    },
   },
 }
