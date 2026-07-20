@@ -105,11 +105,6 @@ router.post('/register', upload.single('foto'), async (req, res) => {
       return res.status(409).json({ message: 'Este e-mail pessoal já está cadastrado.' })
     }
 
-    const phoneInUse = db.usuarios.some((user) => normalizePhone(user.telefone) === telefone)
-    if (phoneInUse) {
-      return res.status(409).json({ message: 'Este telefone já está cadastrado.' })
-    }
-
     const senha_hash = await hashPassword(senha)
     const now = nowIso()
     const foto_perfil = createProfilePhotoValue(req.file)
