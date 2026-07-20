@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { api } from '../../services/api'
 
 const ROLE_OPTIONS = ['TI', 'Manutenção']
 const CORPORATE_EMAIL_OPTIONS = [
@@ -12,7 +11,6 @@ const CORPORATE_EMAIL_OPTIONS = [
 function AuthPage({ onNotify }) {
   const [tab, setTab] = useState('login')
   const [loading, setLoading] = useState(false)
-  const [forgotLoading, setForgotLoading] = useState(false)
   const [loginForm, setLoginForm] = useState({ email: '', senha: '' })
   const [registerForm, setRegisterForm] = useState({
     nome: '',
@@ -55,11 +53,32 @@ function AuthPage({ onNotify }) {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
-    const email = params.get('email')
-    if (email && !loginForm.email) {
-      setLoginForm((current) => ({ ...current, email }))
+    const requestedTab = String(params.get('tab') || '').trim().toLowerCase()
+    const email = String(params.get('email') || '').trim().toLowerCase()
+    const shouldOpenRegistrationVerification = ['1', 'true', 'yes'].includes(
+      String(params.get('openRegistrationVerification') || '').trim().toLowerCase(),
+    )
+
+    if (requestedTab === 'register') {
+      setTab('register')
     }
-  }, [location.search, loginForm.email])
+
+    if (!email) {
+      return
+    }
+
+    setLoginForm((current) => ({ ...current, email }))
+
+    if (requestedTab === 'register') {
+      setRegisterForm((current) => ({ ...current, email }))
+    }
+
+    if (shouldOpenRegistrationVerification) {
+      setRegistrationEmailTarget(email)
+      setRegistrationVerificationCode('')
+      setIsRegistrationCodeModalOpen(true)
+    }
+  }, [location.search])
 
   function updateLoginField(event) {
     const { name, value } = event.target
@@ -255,8 +274,8 @@ function AuthPage({ onNotify }) {
               <input id="loginSenha" name="senha" type="password" value={loginForm.senha} onChange={updateLoginField} required />
             </div>
             <button type="submit" disabled={loading}>{loading ? 'Entrando...' : 'Entrar'}</button>
-            <button type="button" className="link-btn" onClick={handleForgotPassword} disabled={forgotLoading}>
-              {forgotLoading ? 'Processando...' : 'Esqueci minha senha'}
+            <button type="button" className="link-btn" onClick={handleForgotPassword}>
+              Esqueci minha senha
             </button>
           </form>
         ) : (

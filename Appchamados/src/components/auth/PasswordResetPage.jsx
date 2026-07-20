@@ -13,6 +13,7 @@ function PasswordResetPage({ onNotify }) {
 
   const [step, setStep] = useState('request')
   const [loading, setLoading] = useState(false)
+  const [accountNeedsVerification, setAccountNeedsVerification] = useState(false)
   const [form, setForm] = useState({
     email: initialEmail,
     code: '',
@@ -27,6 +28,9 @@ function PasswordResetPage({ onNotify }) {
   function updateField(event) {
     const { name, value } = event.target
     setForm((current) => ({ ...current, [name]: name === 'email' ? normalizeEmail(value) : value }))
+    if (name === 'email') {
+      setAccountNeedsVerification(false)
+    }
   }
 
   async function handleRequestReset(event) {
@@ -42,15 +46,37 @@ function PasswordResetPage({ onNotify }) {
       setLoading(true)
       const result = await api.auth.requestPasswordReset(email)
       setStep('confirm')
+      setAccountNeedsVerification(false)
       onNotify('success', result.message)
       if (result?.debugCode) {
         onNotify('warning', `Código gerado em modo local: ${result.debugCode}`)
       }
     } catch (error) {
-      onNotify('error', error.message)
+      const errorMessage = String(error?.message || '')
+      const normalizedErrorMessage = errorMessage.toLowerCase()
+      const isUnverifiedAccount = normalizedErrorMessage.includes('não foi validada')
+        || normalizedErrorMessage.includes('nao foi validada')
+        || normalizedErrorMessage.includes('confirme o e-mail de cadastro')
+
+      if (isUnverifiedAccount) {
+        setAccountNeedsVerification(true)
+        onNotify('warning', 'Esta conta ainda nao foi validada. Escolha uma opcao para finalizar ou refazer o cadastro.')
+      } else {
+        onNotify('error', error.message)
+      }
     } finally {
       setLoading(false)
     }
+  }
+
+  function goToFinishRegistration() {
+    const email = normalizeEmail(form.email)
+    navigate(`/autenticacao?tab=register&email=${encodeURIComponent(email)}&openRegistrationVerification=1`)
+  }
+
+  function goToRegisterAgain() {
+    const email = normalizeEmail(form.email)
+    navigate(`/autenticacao?tab=register&email=${encodeURIComponent(email)}`)
   }
 
   async function handleConfirmReset(event) {
@@ -121,6 +147,19 @@ function PasswordResetPage({ onNotify }) {
               <button type="button" className="secondary" onClick={() => navigate('/autenticacao')}>
                 Cancelar
               </button>
+              {accountNeedsVerification ? (
+                <>
+                  <p className="settings-inline-tip">
+                    A conta ainda esta pendente de validacao do e-mail. Voce pode concluir o cadastro com codigo ou refazer o cadastro.
+                  </p>
+                  <button type="button" className="secondary" onClick={goToFinishRegistration}>
+                    Finalizar cadastro
+                  </button>
+                  <button type="button" className="secondary" onClick={goToRegisterAgain}>
+                    Refazer cadastro com este e-mail
+                  </button>
+                </>
+              ) : null}
             </>
           ) : (
             <>

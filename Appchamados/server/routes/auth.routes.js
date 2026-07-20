@@ -100,8 +100,8 @@ router.post('/register', upload.single('foto'), async (req, res) => {
     }
 
     const db = await readDatabase()
-    const emailInUse = db.usuarios.some((user) => normalizeEmail(user.email) === email)
-    if (emailInUse) {
+    const existingUser = db.usuarios.find((user) => normalizeEmail(user.email) === email)
+    if (existingUser?.email_verified === true) {
       return res.status(409).json({ message: 'Este e-mail pessoal já está cadastrado.' })
     }
 
@@ -110,9 +110,32 @@ router.post('/register', upload.single('foto'), async (req, res) => {
     const foto_perfil = createProfilePhotoValue(req.file)
 
     let createdUser
+    const isRefreshingUnverifiedAccount = Boolean(existingUser && existingUser.email_verified === false)
     const verificationCode = String(Math.floor(100000 + Math.random() * 900000))
     const verificationExpiresAt = new Date(Date.now() + REGISTRATION_CODE_EXPIRES_MINUTES * 60000).toISOString()
     await mutateDatabase(async (mutableDb) => {
+      if (isRefreshingUnverifiedAccount) {
+        const userToRefresh = mutableDb.usuarios.find((item) => item.id === existingUser.id)
+        userToRefresh.nome = `${nome} ${sobrenome}`.trim()
+        userToRefresh.sobrenome = sobrenome
+        userToRefresh.funcao = funcao
+        userToRefresh.email = email
+        userToRefresh.email_reserva = emailReserva
+        userToRefresh.telefone = telefone
+        userToRefresh.senha_hash = senha_hash
+        userToRefresh.foto_perfil = foto_perfil
+        userToRefresh.ultimo_acesso = now
+        userToRefresh.email_verified = false
+        userToRefresh.pending_email_verification = {
+          code: verificationCode,
+          requested_at: now,
+          expires_at: verificationExpiresAt,
+        }
+        delete userToRefresh.pending_password_reset
+        createdUser = userToRefresh
+        return
+      }
+
       createdUser = {
         id: nextNumericId(mutableDb.usuarios),
         nome: `${nome} ${sobrenome}`.trim(),
@@ -142,11 +165,14 @@ router.post('/register', upload.single('foto'), async (req, res) => {
       expiresInMinutes: REGISTRATION_CODE_EXPIRES_MINUTES,
     })
 
-    return res.status(201).json({
-      message: 'Cadastro realizado com sucesso. Verifique seu e-mail pessoal para validar a conta.',
+    return res.status(isRefreshingUnverifiedAccount ? 200 : 201).json({
+      message: isRefreshingUnverifiedAccount
+        ? 'Cadastro pendente atualizado. Enviamos um novo codigo para confirmar o e-mail pessoal.'
+        : 'Cadastro realizado com sucesso. Verifique seu e-mail pessoal para validar a conta.',
       user: sanitizeUser(createdUser),
       verificationRequired: true,
       emailVerificationSent: true,
+      registrationRefreshed: isRefreshingUnverifiedAccount,
       ...(exposeDebugCodes ? { debugCode: verificationCode } : {}),
     })
   } catch (error) {
