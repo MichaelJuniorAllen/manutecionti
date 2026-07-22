@@ -1,38 +1,32 @@
-﻿{
-    "usuarios":  [
-                     {
-                         "id":  "1",
-                         "nome":  "Michael Reyes",
-                         "sobrenome":  "Reyes",
-                         "email":  "michaelreyesallen@gmail.com",
-                         "telefone":  "54997133510",
-                         "senha_hash":  "$2b$10$f2PzIRDy89DEqnX/9v4fM.yRqZeuckHhaVK9oAh2aoojZRQAZSgJm",
-                         "foto_perfil":  "/uploads/profiles/1783475520206-5eba8d44-ffcf-4463-a64e-9c9eb235b0b0.jpg",
-                         "data_cadastro":  "2026-07-08T01:52:00.307Z",
-                         "ultimo_acesso":  "2026-07-12T21:20:58.054Z",
-                         "funcao":  "TI",
-                         "email_reserva":  "tiupacentral@maoamigacaxias.org.br"
-                     },
-                     {
-                         "id":  "2",
-                         "nome":  "kely",
-                         "email":  "kely@gmail.com",
-                         "telefone":  "54981276428",
-                         "senha_hash":  "$2b$10$oRDjxhOvcylVWlFpS4RVheDrc37D8YhvDMAbduE/v24SHtjH6xttO",
-                         "foto_perfil":  null,
-                         "data_cadastro":  "2026-07-08T21:45:18.245Z",
-                         "ultimo_acesso":  "2026-07-12T14:22:45.547Z",
-                         "funcao":  "ManutenÃ§Ã£o",
-                         "email_reserva":  "manutencaoupacentral@maoamigacaxias.org.br"
-                     }
-                 ],
-    "chamados":  [
-
-                 ],
-    "historico":  [
-
-                  ],
-    "configuracoes":  {
-
-                      }
+{
+  "usuarios": [
+    {
+      "id": "1",
+      "nome": "Michael Reyes",
+      "sobrenome": "Reyes",
+      "email": "michaelreyesallen@gmail.com",
+      "telefone": "54997133510",
+      "senha_hash": "\\/9v4fM.yRqZeuckHhaVK9oAh2aoojZRQAZSgJm",
+      "foto_perfil": "/uploads/profiles/1783475520206-5eba8d44-ffcf-4463-a64e-9c9eb235b0b0.jpg",
+      "data_cadastro": "2026-07-08T01:52:00.307Z",
+      "ultimo_acesso": "2026-07-12T21:20:58.054Z",
+      "funcao": "TI",
+      "email_reserva": "tiupacentral@maoamigacaxias.org.br"
+    },
+    {
+      "id": "2",
+      "nome": "kely",
+      "email": "kely@gmail.com",
+      "telefone": "54981276428",
+      "senha_hash": "\\/v24SHtjH6xttO",
+      "foto_perfil": null,
+      "data_cadastro": "2026-07-08T21:45:18.245Z",
+      "ultimo_acesso": "2026-07-12T14:22:45.547Z",
+      "funcao": "Manutenção",
+      "email_reserva": "manutencaoupacentral@maoamigacaxias.org.br"
+    }
+  ],
+  "chamados": [],
+  "historico": [],
+  "configuracoes": {}
 }
