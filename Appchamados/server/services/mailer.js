@@ -129,6 +129,39 @@ async function sendVerificationEmail({ to, subject, text, html, fallbackLabel, c
   }
 }
 
+export async function sendPhoneChangeEmailCode({ to, userName, code, expiresInMinutes }) {
+  const subject = 'Codigo de confirmacao para troca de telefone'
+  const text = [
+    `Ola, ${userName || 'usuario'}!`,
+    '',
+    'Recebemos uma solicitacao para alterar o seu numero de telefone.',
+    `Seu codigo de confirmacao e: ${code}`,
+    `Este codigo expira em ${expiresInMinutes} minutos.`,
+    '',
+    'Se voce nao solicitou essa alteracao, ignore este e-mail.',
+  ].join('\n')
+
+  const html = `
+    <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.5; color: #20251f;">
+      <h2 style="margin-bottom: 8px;">Confirmacao de troca de telefone</h2>
+      <p>Ola, <strong>${userName || 'usuario'}</strong>.</p>
+      <p>Recebemos uma solicitacao para alterar o seu numero de telefone.</p>
+      <p style="font-size: 22px; letter-spacing: 2px; font-weight: 700; margin: 16px 0;">${code}</p>
+      <p>Este codigo expira em ${expiresInMinutes} minutos.</p>
+      <p>Se voce nao solicitou essa alteracao, ignore este e-mail.</p>
+    </div>
+  `
+
+  return sendVerificationEmail({
+    to,
+    subject,
+    text,
+    html,
+    fallbackLabel: 'Codigo de confirmacao para troca de telefone',
+    code,
+  })
+}
+
 export async function sendEmailChangeCode({ to, userName, code, expiresInMinutes }) {
   const subject = 'Codigo de confirmacao de alteracao de e-mail'
   const text = [

@@ -3,7 +3,7 @@ import multer from 'multer'
 import { requireAuth } from '../middleware/auth.js'
 import { comparePassword, hashPassword, normalizeUserRole, sanitizeUser } from '../services/auth.js'
 import { mutateDatabase, nowIso } from '../services/database.js'
-import { getEmailProviderStatus, isSmtpConfigured, sendEmailChangeCode, sendPasswordChangeCode } from '../services/mailer.js'
+import { getEmailProviderStatus, isSmtpConfigured, sendEmailChangeCode, sendPasswordChangeCode, sendPhoneChangeEmailCode } from '../services/mailer.js'
 import { getSmsConfigurationStatus, isSmsConfigured, sendPhoneChangeCode } from '../services/sms.js'
 
 const router = express.Router()
@@ -269,6 +269,7 @@ router.post('/request-phone-change', requireAuth, async (req, res) => {
   const newPhone = normalizePhone(req.body.newPhone)
   const expirationMinutes = 10
   const smsStatus = getSmsConfigurationStatus()
+  const emailStatus = getEmailProviderStatus()
 
   if (!isValidPhone(newPhone)) {
     return res.status(400).json({ message: 'Informe um telefone válido com DDD.' })
@@ -276,6 +277,7 @@ router.post('/request-phone-change', requireAuth, async (req, res) => {
 
   try {
     let userName = ''
+    let userEmail = ''
     let code = ''
 
     await mutateDatabase(async (db) => {
@@ -286,6 +288,7 @@ router.post('/request-phone-change', requireAuth, async (req, res) => {
       }
 
       userName = user.nome
+      userEmail = user.email
       code = String(Math.floor(100000 + Math.random() * 900000))
       const expiresAt = new Date(Date.now() + expirationMinutes * 60000).toISOString()
       user.pending_phone_change = {
@@ -303,15 +306,38 @@ router.post('/request-phone-change', requireAuth, async (req, res) => {
       expiresInMinutes: expirationMinutes,
     })
 
+    let emailSent = false
+    if (userEmail) {
+      try {
+        await sendPhoneChangeEmailCode({
+          to: userEmail,
+          userName,
+          code,
+          expiresInMinutes: expirationMinutes,
+        })
+        emailSent = true
+      } catch {
+        // falha no email não deve bloquear o processo
+      }
+    }
+
     const smsMessage = sendResult.mode === 'sms'
       ? 'Código enviado por SMS para o novo telefone.'
       : 'SMS não configurado. Código gerado em modo local (fallback no servidor).'
 
+    const emailMessage = emailSent
+      ? ` Código também enviado para o e-mail ${userEmail}.`
+      : ''
+
     return res.json({
-      message: `Código de segurança gerado. ${smsMessage}`,
+      message: `Código de segurança gerado. ${smsMessage}${emailMessage}`,
       smsConfigured: isSmsConfigured(),
       smsProvider: smsStatus.provider,
       smsMissingConfig: smsStatus.missing,
+      emailConfigured: emailStatus.configured,
+      emailProvider: emailStatus.provider,
+      emailSent,
+      userEmail: emailSent ? userEmail : null,
       ...(isSmsConfigured() || process.env.NODE_ENV === 'production' ? {} : { debugCode: code }),
     })
   } catch (error) {

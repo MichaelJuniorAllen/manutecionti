@@ -3,7 +3,7 @@ function HomePage({ onNavigate }) {
     <section className="home-container">
       <div className="home-intro">
         <h2>Bem-vindo!</h2>
-        <p>Sistema inteligente para gerenciar chamados de manutenção e TI</p>
+        <p>Sistema inteligente para gerenciar chamados de manutenção, TI e Engenharia Clínica</p>
       </div>
 
       <div className="home-cards">

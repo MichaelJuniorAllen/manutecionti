@@ -85,19 +85,19 @@ function playAlertSound() {
 
     const context = new AudioContextClass()
     const masterGain = context.createGain()
-    masterGain.gain.value = 0.0001
+    masterGain.gain.value = 1.0
     masterGain.connect(context.destination)
 
-    function beep({ startAt, frequency, duration, type = 'square' }) {
+    function beep({ startAt, frequency, duration, type = 'square', volume = 1.0 }) {
       const oscillator = context.createOscillator()
       const gain = context.createGain()
 
       oscillator.type = type
       oscillator.frequency.setValueAtTime(frequency, startAt)
 
-      gain.gain.setValueAtTime(0.0001, startAt)
-      gain.gain.exponentialRampToValueAtTime(0.3, startAt + 0.015)
-      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration)
+      gain.gain.setValueAtTime(0.001, startAt)
+      gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.001, startAt + duration)
 
       oscillator.connect(gain)
       gain.connect(masterGain)
@@ -106,16 +106,19 @@ function playAlertSound() {
     }
 
     const t0 = context.currentTime
-    beep({ startAt: t0, frequency: 980, duration: 0.12 })
-    beep({ startAt: t0 + 0.16, frequency: 660, duration: 0.16 })
-    beep({ startAt: t0 + 0.36, frequency: 1040, duration: 0.2, type: 'sawtooth' })
+    // Sequência de alerta urgente — 3 grupos de bipes fortes
+    beep({ startAt: t0,        frequency: 1200, duration: 0.18, type: 'square',   volume: 1.0 })
+    beep({ startAt: t0 + 0.22, frequency: 1200, duration: 0.18, type: 'square',   volume: 1.0 })
+    beep({ startAt: t0 + 0.44, frequency: 1200, duration: 0.18, type: 'square',   volume: 1.0 })
+    beep({ startAt: t0 + 0.72, frequency: 880,  duration: 0.30, type: 'sawtooth', volume: 0.9 })
+    beep({ startAt: t0 + 1.08, frequency: 1400, duration: 0.40, type: 'square',   volume: 1.0 })
 
-    masterGain.gain.exponentialRampToValueAtTime(0.8, t0 + 0.03)
-    masterGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.65)
+    masterGain.gain.setValueAtTime(1.0, t0)
+    masterGain.gain.exponentialRampToValueAtTime(0.001, t0 + 1.6)
 
     window.setTimeout(() => {
       context.close().catch(() => {})
-    }, 900)
+    }, 2000)
   } catch {
     // Mantém fluxo mesmo se áudio falhar por bloqueio do navegador.
   }
@@ -1399,6 +1402,8 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
 
       if (!response?.smsConfigured && response?.debugCode) {
         onNotify('warning', `Ambiente local sem SMS: use o código ${response.debugCode} para confirmar.`)
+      } else if (response?.emailSent) {
+        onNotify('success', `Código enviado para o e-mail ${response.userEmail}${response?.smsConfigured ? ' e por SMS.' : '.'}`)
       } else {
         onNotify('success', 'Código de segurança enviado por SMS para o novo telefone.')
       }
@@ -1920,7 +1925,7 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
                   <form className="phone-code-modal panel" onSubmit={confirmPhoneChangeCode}>
                     <h3>Confirmar código de segurança</h3>
                     <p>
-                      Digite o código enviado por SMS para {formatPhoneDisplay(pendingPhoneTarget)}.
+                      Digite o código de segurança enviado para o seu e-mail e/ou por SMS para {formatPhoneDisplay(pendingPhoneTarget)}.
                     </p>
                     <div className="field">
                       <label htmlFor="phoneCodeInput">Código de segurança</label>
