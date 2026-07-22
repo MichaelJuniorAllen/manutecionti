@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { PRIORITY_OPTIONS } from '../utils/tickets'
 
-const RESPONSIBLE_OPTIONS = ['TI', 'Manutenção']
+const RESPONSIBLE_OPTIONS = ['TI', 'Manutenção', 'Engenharia Clínica']
 
 const ALLOWED_TICKET_EMAILS = [
   'scihupacentral@maoamigacaxias.org.br',

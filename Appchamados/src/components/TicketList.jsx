@@ -203,6 +203,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
           <option value="todos">Todos os departamentos</option>
           <option value="Manutenção">Manutenção</option>
           <option value="TI">TI</option>
+          <option value="Engenharia Clínica">Engenharia Clínica</option>
         </select>
       </div>
 
