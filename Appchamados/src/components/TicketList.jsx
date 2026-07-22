@@ -6,6 +6,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [priorityFilter, setPriorityFilter] = useState('todos')
+  const [departmentFilter, setDepartmentFilter] = useState('todos')
   const [localTickets, setLocalTickets] = useState([])
 
   useEffect(() => {
@@ -154,10 +155,11 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
       const matchesSearch = !query || text.includes(query)
       const matchesStatus = statusFilter === 'todos' || ticket.status === statusFilter
       const matchesPriority = priorityFilter === 'todos' || ticket.prioridade === priorityFilter
-      return matchesSearch && matchesStatus && matchesPriority
+      const matchesDepartment = departmentFilter === 'todos' || ticket.responsavel === departmentFilter
+      return matchesSearch && matchesStatus && matchesPriority && matchesDepartment
     })
     return sortTickets(filtered)
-  }, [localTickets, priorityFilter, search, statusFilter])
+  }, [localTickets, priorityFilter, search, statusFilter, departmentFilter])
 
   return (
     <section className="tickets-section">
@@ -191,6 +193,16 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
           <option value="alta">🟠 Alta</option>
           <option value="media">🟡 Média</option>
           <option value="baixa">🟢 Baixa</option>
+        </select>
+        <select
+          id="departmentFilter"
+          className="filter-select"
+          value={departmentFilter}
+          onChange={(event) => setDepartmentFilter(event.target.value)}
+        >
+          <option value="todos">Todos os departamentos</option>
+          <option value="Manutenção">Manutenção</option>
+          <option value="TI">TI</option>
         </select>
       </div>
 
