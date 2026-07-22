@@ -155,7 +155,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
       const matchesSearch = !query || text.includes(query)
       const matchesStatus = statusFilter === 'todos' || ticket.status === statusFilter
       const matchesPriority = priorityFilter === 'todos' || ticket.prioridade === priorityFilter
-      const matchesDepartment = departmentFilter === 'todos' || ticket.responsavel === departmentFilter
+      const matchesDepartment = departmentFilter === 'todos' || ticket.tecnicoResponsavel === departmentFilter
       return matchesSearch && matchesStatus && matchesPriority && matchesDepartment
     })
     return sortTickets(filtered)
