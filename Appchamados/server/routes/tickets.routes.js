@@ -195,16 +195,12 @@ router.post('/', optionalAuth, async (req, res) => {
     observacoes: (req.body.observacoes || '').trim(),
   }
 
-  if (!payload.titulo || !payload.descricao || !payload.area || !payload.email_corporativo) {
-    return res.status(400).json({ message: 'Título, descrição, área e e-mail corporativo são obrigatórios.' })
+  if (!payload.titulo || !payload.descricao || !payload.area) {
+    return res.status(400).json({ message: 'Título, descrição e área são obrigatórios.' })
   }
 
   if (!priorityToMinutes[payload.prioridade]) {
     return res.status(400).json({ message: 'Prioridade inválida.' })
-  }
-
-  if (!ALLOWED_TICKET_EMAILS.has(payload.email_corporativo)) {
-    return res.status(400).json({ message: 'Digite um e-mail corporativo autorizado para registrar o chamado.' })
   }
 
   try {

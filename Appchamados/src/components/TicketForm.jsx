@@ -29,7 +29,6 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
     title: '',
     area: '',
     requester: '',
-    corporateEmail: '',
     priority: 'media',
     responsible: '',
     description: '',
@@ -52,7 +51,6 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
         title: '',
         area: '',
         requester: '',
-        corporateEmail: '',
         priority: 'media',
         responsible: '',
         description: '',
@@ -134,18 +132,6 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
                   className="form-input"
                 />
               </div>
-            </div>
-            <div className="field">
-              <label htmlFor="corporateEmail">E-mail corporativo</label>
-              <input
-                id="corporateEmail"
-                name="corporateEmail"
-                type="email"
-                placeholder="Digite seu e-mail (opcional)"
-                value={formValues.corporateEmail}
-                onChange={handleChange}
-                className="form-input"
-              />
             </div>
           </div>
 
