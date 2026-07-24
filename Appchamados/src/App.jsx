@@ -433,7 +433,7 @@ function App() {
           path="/meu-historico"
           element={(
             <ProtectedRoute>
-              <MyHistoryPage onNotify={notify} currentUserName={getFullName(user)} />
+              <MyHistoryPage onNotify={notify} currentUserName={getFullName(user)} currentUserId={user?.id || ''} />
             </ProtectedRoute>
           )}
         />
@@ -620,13 +620,17 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
     }
   }, [loadTickets])
 
-  async function handleUpdateStatus(ticketId, status) {
+  async function handleUpdateStatus(ticketId, status, extras = {}) {
     try {
-      const payload = { status }
+      const payload = { status, ...extras }
 
       await api.tickets.updateStatus(ticketId, payload)
       if (status === 'Concluído') {
         onNotify('success', 'Chamado concluído e enviado para o seu histórico.')
+      } else if (status === 'Aguardando Continuação') {
+        onNotify('success', 'Atendimento pausado. Chamado disponível para continuação.')
+      } else if (status === 'Em andamento') {
+        onNotify('success', 'Atendimento iniciado com sucesso.')
       } else {
         onNotify('success', 'Status atualizado com sucesso.')
       }
@@ -642,7 +646,7 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
 
   return (
     <>
-      <Stats tickets={todayTickets} />
+      <Stats tickets={todayTickets} currentUserId={currentUserId} />
       <TicketList
         tickets={tickets}
         onUpdateStatus={handleUpdateStatus}
@@ -683,9 +687,18 @@ function ProfilePage({ user }) {
   )
 }
 
-function MyHistoryPage({ onNotify, currentUserName }) {
+function MyHistoryPage({ onNotify, currentUserName, currentUserId }) {
   const [tickets, setTickets] = useState([])
   const [allTickets, setAllTickets] = useState([])
+  const sessionActionOptions = ['Iniciou', 'Retomou', 'Pausou', 'Concluiu']
+  const pauseReasonOptions = [
+    'Final do expediente',
+    'Aguardando peça',
+    'Aguardando autorização',
+    'Aguardando outro setor',
+    'Necessita outro técnico',
+    'Outro',
+  ]
   const [filters, setFilters] = useState({
     selectedDate: '',
     selectedMonth: '',
@@ -696,6 +709,8 @@ function MyHistoryPage({ onNotify, currentUserName }) {
     priority: 'todos',
     area: 'todos',
     responsible: 'todos',
+    lastAction: 'todos',
+    pauseReason: 'todos',
     search: '',
   })
 
@@ -710,6 +725,8 @@ function MyHistoryPage({ onNotify, currentUserName }) {
       priority: 'todos',
       area: 'todos',
       responsible: 'todos',
+      lastAction: 'todos',
+      pauseReason: 'todos',
       search: '',
     }
 
@@ -868,6 +885,29 @@ function MyHistoryPage({ onNotify, currentUserName }) {
     return formatResolutionForPdf(ticket?.tempoAndamento)
   }
 
+  function getLastSessionAction(ticket) {
+    const sessions = ticket?.sessoes || []
+    const lastSession = sessions.length ? sessions[sessions.length - 1] : null
+    if (!lastSession) return '--'
+    if (lastSession.status === 'Concluído') return 'Concluiu'
+    if (lastSession.status === 'Pausado') return 'Pausou'
+    if (lastSession.status === 'Em andamento') {
+      return lastSession.tipoInicio === 'Retomado' ? 'Retomou' : 'Iniciou'
+    }
+    return lastSession.status || '--'
+  }
+
+  function getWorkedByCurrentTechnician(ticket) {
+    const sessions = ticket?.sessoes || []
+    const total = sessions.reduce((acc, session) => {
+      if (String(session?.tecnicoId || '') !== String(currentUserId || '')) return acc
+      const value = Number(session?.tempoTrabalhado)
+      return Number.isFinite(value) && value > 0 ? acc + value : acc
+    }, 0)
+
+    return formatResolutionForPdf(total)
+  }
+
   function exportHistoryPdf() {
     if (!tickets.length) {
       onNotify('warning', 'Não há chamados para exportar no filtro atual.')
@@ -892,6 +932,9 @@ function MyHistoryPage({ onNotify, currentUserName }) {
         'Prioridade',
         'Status',
         'Tecnico',
+        'Sessoes',
+        'Tempo tecnico',
+        'Ultima acao',
         'Fechamento',
         'Tempo total',
         'Tempo andamento',
@@ -904,6 +947,9 @@ function MyHistoryPage({ onNotify, currentUserName }) {
         ticket.prioridade || '--',
         ticket.status || '--',
         ticket.tecnicoResponsavel || '--',
+        `${Number(ticket.totalSessoes || 0)} sessoes`,
+        getWorkedByCurrentTechnician(ticket),
+        getLastSessionAction(ticket),
         formatDateForPdf(ticket.dataFechamento),
         formatResolutionForPdf(ticket.tempoResolucao),
         getInProgressForPdf(ticket),
@@ -955,6 +1001,7 @@ function MyHistoryPage({ onNotify, currentUserName }) {
           <option value="todos">Status</option>
           <option value="Aberto">Aberto</option>
           <option value="Em andamento">Em andamento</option>
+          <option value="Aguardando Continuação">Aguardando Continuação</option>
           <option value="Concluído">Concluído</option>
         </select>
         <select className="filter-select" value={filters.priority} onChange={(event) => updateFilter('priority', event.target.value)}>
@@ -980,9 +1027,29 @@ function MyHistoryPage({ onNotify, currentUserName }) {
             <option key={name} value={name}>{name}</option>
           ))}
         </select>
+        <select
+          className="filter-select"
+          value={filters.lastAction}
+          onChange={(event) => updateFilter('lastAction', event.target.value)}
+        >
+          <option value="todos">Última ação</option>
+          {sessionActionOptions.map((action) => (
+            <option key={action} value={action}>{action}</option>
+          ))}
+        </select>
+        <select
+          className="filter-select"
+          value={filters.pauseReason}
+          onChange={(event) => updateFilter('pauseReason', event.target.value)}
+        >
+          <option value="todos">Motivo da pausa</option>
+          {pauseReasonOptions.map((reason) => (
+            <option key={reason} value={reason}>{reason}</option>
+          ))}
+        </select>
       </div>
 
-      <MyHistoryTable tickets={tickets} />
+      <MyHistoryTable tickets={tickets} currentUserId={currentUserId} />
 
       <button
         type="button"

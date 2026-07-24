@@ -11,6 +11,7 @@ const STATE_ROW_ID = 'main'
 const defaultDatabase = {
   usuarios: [],
   chamados: [],
+  atendimentos: [],
   historico: [],
   configuracoes: {},
 }
@@ -32,6 +33,7 @@ function cloneDefaultDatabase() {
   return {
     usuarios: [],
     chamados: [],
+    atendimentos: [],
     historico: [],
     configuracoes: {},
   }

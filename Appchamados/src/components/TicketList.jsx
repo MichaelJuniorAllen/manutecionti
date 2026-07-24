@@ -2,12 +2,26 @@ import { useEffect, useMemo, useState } from 'react'
 import { formatDate, getRemainingMs } from '../utils/tickets'
 import Avatar from './common/Avatar'
 
+const PAUSE_REASON_OPTIONS = [
+  'Final do expediente',
+  'Aguardando peça',
+  'Aguardando autorização',
+  'Aguardando outro setor',
+  'Necessita outro técnico',
+  'Outro',
+]
+
 function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentUserName = '' }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [priorityFilter, setPriorityFilter] = useState('todos')
   const [departmentFilter, setDepartmentFilter] = useState('todos')
   const [localTickets, setLocalTickets] = useState([])
+  const [pauseTicketId, setPauseTicketId] = useState(null)
+  const [pauseReason, setPauseReason] = useState(PAUSE_REASON_OPTIONS[0])
+  const [pauseNotes, setPauseNotes] = useState('')
+  const [historyTicketId, setHistoryTicketId] = useState(null)
+  const [actionLoadingId, setActionLoadingId] = useState('')
 
   useEffect(() => {
     setLocalTickets(tickets)
@@ -144,8 +158,47 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
     return ticket.atendenteFotoPerfil
   }
 
-  function normalize(value = '') {
-    return String(value).trim().toLowerCase()
+  function formatWorkedMinutes(minutes) {
+    const safeMinutes = Number(minutes)
+    if (!Number.isFinite(safeMinutes) || safeMinutes < 0) return '--'
+    const hours = Math.floor(safeMinutes / 60)
+    const mins = safeMinutes % 60
+    if (hours > 0) return `${hours}h ${mins}min`
+    return `${mins}min`
+  }
+
+  function getSessionActionLabel(session) {
+    if (!session) return '--'
+    if (session.status === 'Concluído') return 'Concluiu'
+    if (session.status === 'Pausado') return 'Pausou'
+    if (session.status === 'Em andamento') {
+      return session.tipoInicio === 'Retomado' ? 'Retomou' : 'Iniciou'
+    }
+    return session.status || '--'
+  }
+
+  async function handleStatusAction(ticketId, status, extras = {}) {
+    try {
+      setActionLoadingId(String(ticketId))
+      await onUpdateStatus?.(ticketId, status, extras)
+    } finally {
+      setActionLoadingId('')
+    }
+  }
+
+  async function handlePauseSubmit(event) {
+    event.preventDefault()
+    if (!pauseTicketId) return
+    if (!pauseNotes.trim()) return
+
+    await handleStatusAction(pauseTicketId, 'Aguardando Continuação', {
+      motivoPausa: pauseReason,
+      observacaoSessao: pauseNotes.trim(),
+    })
+
+    setPauseTicketId(null)
+    setPauseReason(PAUSE_REASON_OPTIONS[0])
+    setPauseNotes('')
   }
 
   const filteredTickets = useMemo(() => {
@@ -180,6 +233,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
           <option value="todos">Todos os status</option>
           <option value="Aberto">Aberto</option>
           <option value="Em andamento">Em andamento</option>
+          <option value="Aguardando Continuação">Aguardando Continuação</option>
           <option value="Concluído">Concluído</option>
         </select>
         <select
@@ -222,6 +276,9 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
             const attendantName = ticket.atendenteNome || ticket.tecnicoResponsavel || 'Não atribuído'
             const attendantAvatar = getAttendantAvatar(ticket)
             const responsibleLabel = ticket.tecnicoResponsavel || 'Não atribuído'
+            const ticketSessions = ticket?.sessoes || []
+            const lastSession = ticketSessions.length ? ticketSessions[ticketSessions.length - 1] : null
+            const lastClosedSession = [...ticketSessions].reverse().find((session) => session?.fim) || null
             const andamentoAoVivo = ticket.status === 'Em andamento'
               ? formatElapsed(ticket.dataAtendimento)
               : '--'
@@ -229,13 +286,9 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
               ? formatElapsed(ticket.dataAtendimento, ticket.dataFechamento)
               : '--'
             const hasAttendantId = Boolean(ticket.atendenteId)
-            const legacyResponsible = normalize(ticket.tecnicoResponsavel)
-            const currentName = normalize(currentUserName)
-            const hasSpecificLegacyResponsible = legacyResponsible && legacyResponsible !== normalize('Não atribuído')
-            const legacyCanConclude = !hasSpecificLegacyResponsible || legacyResponsible === currentName
-            const canConclude = hasAttendantId
-              ? String(ticket.atendenteId) === String(currentUserId)
-              : legacyCanConclude
+            const canConclude = hasAttendantId && String(ticket.atendenteId) === String(currentUserId)
+            const canPause = canConclude && ticket.status === 'Em andamento'
+            const isActionLoading = actionLoadingId === String(ticket.id)
 
             return (
               <article
@@ -274,6 +327,16 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
                   <p className="ticket-description">{ticket.descricao || ''}</p>
                 </div>
 
+                {ticket.status === 'Aguardando Continuação' && lastClosedSession ? (
+                  <div className="last-session-summary">
+                    <strong>Último atendimento</strong>
+                    <p>👤 {lastClosedSession.tecnicoNome || 'Técnico não informado'}</p>
+                    <p>Tempo trabalhado: {formatWorkedMinutes(lastClosedSession.tempoTrabalhado)}</p>
+                    <p>Motivo: {lastClosedSession.motivoPausa || '--'}</p>
+                    <p>Observação: {lastClosedSession.observacao || '--'}</p>
+                  </div>
+                ) : null}
+
                 <div className="ticket-footer">
                   <div className="ticket-countdown">
                     {ticket.status === 'Concluído' ? (
@@ -305,26 +368,61 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
                       <button
                         type="button"
                         className="action-btn attend-btn"
-                        onClick={() => onUpdateStatus?.(ticket.id, 'Em andamento')}
+                        disabled={isActionLoading}
+                        onClick={() => handleStatusAction(ticket.id, 'Em andamento')}
                         title="Marcar como em andamento"
                       >
-                        👤 Atender
+                        {isActionLoading ? '...' : '👤 Atender'}
+                      </button>
+                    )}
+                    {ticket.status === 'Aguardando Continuação' && (
+                      <button
+                        type="button"
+                        className="action-btn attend-btn"
+                        disabled={isActionLoading}
+                        onClick={() => handleStatusAction(ticket.id, 'Em andamento')}
+                        title="Retomar atendimento"
+                      >
+                        {isActionLoading ? '...' : '↺ Continuar Atendimento'}
                       </button>
                     )}
                     {ticket.status === 'Em andamento' && (
-                      <button
-                        type="button"
-                        className="action-btn complete-btn"
-                        disabled={!canConclude}
-                        onClick={() => onUpdateStatus?.(ticket.id, 'Concluído')}
-                        title={canConclude ? 'Marcar como concluído' : 'Somente quem está atendendo pode concluir'}
-                      >
-                        {canConclude ? '✓ Concluir' : '🔒 Somente atendente'}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="action-btn complete-btn"
+                          disabled={!canConclude || isActionLoading}
+                          onClick={() => handleStatusAction(ticket.id, 'Concluído')}
+                          title={canConclude ? 'Finalizar atendimento' : 'Somente quem está atendendo pode concluir'}
+                        >
+                          {canConclude ? (isActionLoading ? '...' : '✓ Finalizar Atendimento') : '🔒 Somente atendente'}
+                        </button>
+                        <button
+                          type="button"
+                          className="action-btn pause-btn"
+                          disabled={!canPause || isActionLoading}
+                          onClick={() => {
+                            setPauseTicketId(ticket.id)
+                            setPauseReason(PAUSE_REASON_OPTIONS[0])
+                            setPauseNotes('')
+                          }}
+                          title={canPause ? 'Pausar atendimento' : 'Somente quem está atendendo pode pausar'}
+                        >
+                          ⏸ Pausar Atendimento
+                        </button>
+                      </>
                     )}
                     {ticket.status === 'Concluído' && (
                       <span className="action-completed">✓ Concluído</span>
                     )}
+                    <button
+                      type="button"
+                      className="action-btn history-btn"
+                      onClick={() => setHistoryTicketId(ticket.id)}
+                      title="Ver histórico completo"
+                    >
+                      🕘 Ver Histórico
+                    </button>
                   </div>
                 </div>
               </article>
@@ -332,6 +430,85 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
           })
         )}
       </div>
+
+      {pauseTicketId ? (
+        <div className="ticket-modal-overlay" role="dialog" aria-modal="true">
+          <div className="ticket-modal">
+            <h3>Pausar atendimento</h3>
+            <p>Registre o motivo e a observação da pausa para manter o histórico completo.</p>
+            <form onSubmit={handlePauseSubmit} className="ticket-modal-form">
+              <div className="field">
+                <label htmlFor="pause-reason">Motivo</label>
+                <select
+                  id="pause-reason"
+                  value={pauseReason}
+                  onChange={(event) => setPauseReason(event.target.value)}
+                  className="form-input"
+                >
+                  {PAUSE_REASON_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="pause-notes">Observações *</label>
+                <textarea
+                  id="pause-notes"
+                  required
+                  value={pauseNotes}
+                  onChange={(event) => setPauseNotes(event.target.value)}
+                  className="form-textarea"
+                  placeholder="Descreva o que foi feito e o que falta concluir."
+                />
+              </div>
+              <div className="ticket-modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setPauseTicketId(null)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn-primary" disabled={!pauseNotes.trim()}>
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {historyTicketId ? (
+        <div className="ticket-modal-overlay" role="dialog" aria-modal="true">
+          <div className="ticket-modal ticket-history-modal">
+            <h3>Histórico de Atendimento</h3>
+            <div className="ticket-history-timeline">
+              {(() => {
+                const selectedTicket = localTickets.find((item) => String(item.id) === String(historyTicketId))
+                const sessions = selectedTicket?.sessoes || []
+
+                if (!sessions.length) {
+                  return <p className="empty-state-text">Ainda não há sessões registradas para este chamado.</p>
+                }
+
+                return sessions.map((session) => (
+                  <article key={session.id} className="timeline-item">
+                    <strong>
+                      {session.tecnicoNome || 'Técnico'} {getSessionActionLabel(session).toLowerCase()} atendimento
+                    </strong>
+                    <p>Início: {formatDate(session.inicio)}</p>
+                    <p>Término: {session.fim ? formatDate(session.fim) : '--'}</p>
+                    <p>Tempo: {formatWorkedMinutes(session.tempoTrabalhado)}</p>
+                    <p>Motivo da pausa: {session.motivoPausa || '--'}</p>
+                    <p>Observação: {session.observacao || '--'}</p>
+                  </article>
+                ))
+              })()}
+            </div>
+            <div className="ticket-modal-actions">
+              <button type="button" className="btn-primary" onClick={() => setHistoryTicketId(null)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
