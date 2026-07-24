@@ -221,6 +221,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
             const isDanger = remainingMs != null && remainingMs <= 30 * 60 * 1000
             const attendantName = ticket.atendenteNome || ticket.tecnicoResponsavel || 'Não atribuído'
             const attendantAvatar = getAttendantAvatar(ticket)
+            const responsibleLabel = ticket.tecnicoResponsavel || 'Não atribuído'
             const andamentoAoVivo = ticket.status === 'Em andamento'
               ? formatElapsed(ticket.dataAtendimento)
               : '--'
@@ -249,6 +250,9 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
                   <div className="ticket-status">
                     <span className={`status-badge status-${ticket.status.toLowerCase().replace(/\s+/g, '-')}`}>
                       {ticket.status}
+                    </span>
+                    <span className="responsible-badge" title={`Responsável definido na abertura: ${responsibleLabel}`}>
+                      {responsibleLabel}
                     </span>
                   </div>
                 </div>

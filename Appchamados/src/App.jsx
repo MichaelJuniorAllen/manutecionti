@@ -623,9 +623,6 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
   async function handleUpdateStatus(ticketId, status) {
     try {
       const payload = { status }
-      if (status === 'Em andamento' && currentUserName) {
-        payload.tecnicoResponsavel = currentUserName
-      }
 
       await api.tickets.updateStatus(ticketId, payload)
       if (status === 'Concluído') {

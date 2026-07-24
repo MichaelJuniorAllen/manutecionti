@@ -33,6 +33,12 @@ const ALLOWED_TICKET_EMAILS = new Set([
   'coordenfermagemupacentral@maoamigacaxias.org.br',
 ])
 
+const TEAM_RESPONSIBLE_OPTIONS = new Set([
+  'ti',
+  'manutenção',
+  'engenharia clínica',
+])
+
 const streamClients = new Set()
 const TEN_MINUTES_MS = 10 * 60 * 1000
 let reminderLoopInitialized = false
@@ -40,6 +46,10 @@ let reminderLoopBusy = false
 
 function normalize(value = '') {
   return value.trim().toLowerCase()
+}
+
+function isTeamResponsible(value = '') {
+  return TEAM_RESPONSIBLE_OPTIONS.has(normalize(value))
 }
 
 function computeResolutionMinutes(startIso, endIso) {
@@ -383,7 +393,6 @@ router.patch('/:id/status', async (req, res) => {
         ticket.atendente_nome = req.auth.user.nome
         ticket.atendente_foto_perfil = req.auth.user.foto_perfil || null
         ticket.data_atendimento = ticket.data_atendimento || nowIso()
-        ticket.tecnico_responsavel = req.auth.user.nome
       }
 
       if (status === 'Concluído') {
@@ -392,7 +401,7 @@ router.patch('/:id/status', async (req, res) => {
           const currentUserName = normalize(req.auth.user.nome || '')
           const hasSpecificTechnician = technicianName && technicianName !== normalize('Não atribuído')
 
-          if (hasSpecificTechnician && technicianName !== currentUserName) {
+          if (hasSpecificTechnician && !isTeamResponsible(technicianName) && technicianName !== currentUserName) {
             throw createHttpError(403, `Apenas ${ticket.tecnico_responsavel} pode concluir este chamado.`)
           }
 
@@ -401,7 +410,6 @@ router.patch('/:id/status', async (req, res) => {
           ticket.atendente_nome = req.auth.user.nome
           ticket.atendente_foto_perfil = req.auth.user.foto_perfil || null
           ticket.data_atendimento = ticket.data_atendimento || nowIso()
-          ticket.tecnico_responsavel = req.auth.user.nome
         }
 
         if (ticket.atendente_id !== req.auth.user.id) {
