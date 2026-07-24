@@ -5,6 +5,13 @@ export const PRIORITY_OPTIONS = [
   { value: 'baixa', label: 'Baixa - 1 dia' },
 ]
 
+const PRIORITY_SLA_MINUTES = {
+  critica: 20,
+  alta: 60,
+  media: 180,
+  baixa: 1440,
+}
+
 export function formatDate(dateString) {
   if (!dateString) return ''
   const date = new Date(dateString)
@@ -24,6 +31,46 @@ export function formatRemaining(ms) {
 }
 
 export function getRemainingMs(ticket) {
-  if (!ticket?.dueAt || ticket?.status === 'Concluído') return null
-  return new Date(ticket.dueAt).getTime() - Date.now()
+  if (ticket?.status === 'Concluído') return null
+
+  const dueAt = ticket?.dueAt ? new Date(ticket.dueAt).getTime() : NaN
+  if (Number.isFinite(dueAt)) {
+    return dueAt - Date.now()
+  }
+
+  const openedAt = ticket?.dataAbertura ? new Date(ticket.dataAbertura).getTime() : NaN
+  const priority = String(ticket?.prioridade || '').toLowerCase()
+  const slaMinutes = PRIORITY_SLA_MINUTES[priority]
+
+  if (!Number.isFinite(openedAt) || !Number.isFinite(slaMinutes)) {
+    return null
+  }
+
+  return openedAt + slaMinutes * 60000 - Date.now()
+}
+
+export function getDynamicPriorityKey(ticket, remainingMs = getRemainingMs(ticket)) {
+  const initial = String(ticket?.prioridade || '').toLowerCase()
+  if (remainingMs == null) return initial || 'baixa'
+  if (remainingMs <= 0) return 'vencido'
+
+  if (initial === 'baixa') {
+    if (remainingMs <= 20 * 60 * 1000) return 'critica'
+    if (remainingMs <= 60 * 60 * 1000) return 'alta'
+    if (remainingMs <= 3 * 60 * 60 * 1000) return 'media'
+    return 'baixa'
+  }
+
+  if (initial === 'media') {
+    if (remainingMs <= 20 * 60 * 1000) return 'critica'
+    if (remainingMs <= 60 * 60 * 1000) return 'alta'
+    return 'media'
+  }
+
+  if (initial === 'alta') {
+    if (remainingMs <= 20 * 60 * 1000) return 'critica'
+    return 'alta'
+  }
+
+  return 'critica'
 }

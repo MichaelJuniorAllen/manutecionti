@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { formatDate, getRemainingMs } from '../utils/tickets'
+import { formatDate, getDynamicPriorityKey, getRemainingMs } from '../utils/tickets'
 import Avatar from './common/Avatar'
 
 const PAUSE_REASON_OPTIONS = [
@@ -89,12 +89,17 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
   }
 
   function sortTickets(ticketsToSort) {
-    const priorityOrder = { critica: 1, alta: 2, media: 3, baixa: 4 }
+    const priorityOrder = { vencido: 0, critica: 1, alta: 2, media: 3, baixa: 4 }
     const statusOrder = { 'Aberto': 1, 'Em andamento': 2, 'Concluído': 3 }
     
     return [...ticketsToSort].sort((a, b) => {
-      // Primero por prioridad
-      const priorityDiff = (priorityOrder[a.prioridade] || 5) - (priorityOrder[b.prioridade] || 5)
+      const aRemaining = getRemainingMs(a)
+      const bRemaining = getRemainingMs(b)
+      const aDynamicPriority = getDynamicPriorityKey(a, aRemaining)
+      const bDynamicPriority = getDynamicPriorityKey(b, bRemaining)
+
+      // Primero por prioridad dinamica
+      const priorityDiff = (priorityOrder[aDynamicPriority] || 5) - (priorityOrder[bDynamicPriority] || 5)
       if (priorityDiff !== 0) return priorityDiff
       
       // Luego por estado
@@ -115,21 +120,16 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
     const seconds = Math.floor((absMs % 60000) / 1000)
 
     if (isPast) {
-      return 'Vencido!'
+      return `Vencido há: ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
     }
 
-    // Mostrar contador para todos los tickets, no solo críticos
-    if (hours > 0) {
-      return `${hours}h ${minutes}m ${seconds}s`
-    }
-    if (minutes > 0) {
-      return `${minutes}m ${seconds}s`
-    }
-    return `${seconds}s`
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
   }
 
   function getPriorityIcon(priority) {
     switch (priority) {
+      case 'vencido':
+        return '🚨'
       case 'critica':
         return '🔴'
       case 'alta':
@@ -145,6 +145,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
 
   function getPriorityLabel(priority) {
     const labels = {
+      vencido: 'SLA Vencido',
       critica: 'Crítica',
       alta: 'Alta',
       media: 'Média',
@@ -204,10 +205,14 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
   const filteredTickets = useMemo(() => {
     const query = search.trim().toLowerCase()
     const filtered = localTickets.filter((ticket) => {
+      const remainingMs = getRemainingMs(ticket)
+      const dynamicPriority = getDynamicPriorityKey(ticket, remainingMs)
       const text = `${ticket.titulo} ${ticket.area} ${ticket.tecnicoResponsavel} ${ticket.descricao} ${ticket.numeroChamado}`.toLowerCase()
       const matchesSearch = !query || text.includes(query)
       const matchesStatus = statusFilter === 'todos' || ticket.status === statusFilter
-      const matchesPriority = priorityFilter === 'todos' || ticket.prioridade === priorityFilter
+      const matchesPriority = priorityFilter === 'todos'
+        || dynamicPriority === priorityFilter
+        || (priorityFilter === 'critica' && dynamicPriority === 'vencido')
       const matchesDepartment = departmentFilter === 'todos' || ticket.tecnicoResponsavel === departmentFilter
       return matchesSearch && matchesStatus && matchesPriority && matchesDepartment
     })
@@ -269,10 +274,11 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
         ) : (
           filteredTickets.map((ticket) => {
             const remainingMs = getRemainingMs(ticket)
+            const dynamicPriority = getDynamicPriorityKey(ticket, remainingMs)
             const countdownLabel = formatCountdown(remainingMs)
             const isVencido = remainingMs != null && remainingMs <= 0 && ticket.status !== 'Concluído'
-            const isWarning = remainingMs != null && remainingMs <= 60 * 60 * 1000 && remainingMs > 0
-            const isDanger = remainingMs != null && remainingMs <= 30 * 60 * 1000
+            const isWarning = dynamicPriority === 'alta'
+            const isDanger = dynamicPriority === 'critica' || dynamicPriority === 'vencido'
             const attendantName = ticket.atendenteNome || ticket.tecnicoResponsavel || 'Não atribuído'
             const attendantAvatar = getAttendantAvatar(ticket)
             const responsibleLabel = ticket.tecnicoResponsavel || 'Não atribuído'
@@ -293,12 +299,12 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
             return (
               <article
                 key={ticket.id}
-                className={`ticket-card ${ticket.prioridade} ${isVencido ? 'vencido' : ''} ${isDanger ? 'danger' : isWarning ? 'warning' : ''}`}
+                className={`ticket-card ${dynamicPriority} ${isVencido ? 'vencido' : ''} ${isDanger ? 'danger' : isWarning ? 'warning' : ''}`}
               >
                 <div className="ticket-header">
-                  <div className="ticket-priority">
-                    <span className="priority-icon">{getPriorityIcon(ticket.prioridade)}</span>
-                    <span className="priority-label">{getPriorityLabel(ticket.prioridade)}</span>
+                  <div className={`ticket-priority priority-${dynamicPriority}`}>
+                    <span className="priority-icon">{getPriorityIcon(dynamicPriority)}</span>
+                    <span className={`priority-label priority-${dynamicPriority}`}>{getPriorityLabel(dynamicPriority)}</span>
                   </div>
                   <div className="ticket-status">
                     <span className={`status-badge status-${ticket.status.toLowerCase().replace(/\s+/g, '-')}`}>
@@ -348,7 +354,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
                       </>
                     ) : (
                       <>
-                        <span className="countdown-icon">⏱️</span>
+                        <span className="countdown-icon">{isVencido ? '🚨' : '⏱️'}</span>
                         <span className={`countdown-text ${isVencido ? 'vencido' : isDanger ? 'danger' : ''}`}>
                           {countdownLabel}
                         </span>
