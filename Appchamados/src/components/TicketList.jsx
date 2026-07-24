@@ -296,6 +296,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
                   <div className="ticket-meta">
                     <span className="meta-item">{ticket.area || '--'}</span>
                     <span className="meta-item">#{ticket.numeroChamado || '--'}</span>
+                    <span className="meta-item">{ticket.solicitante || 'Solicitante não informado'}</span>
                     <span className="meta-item meta-date">{formatDate(ticket.dataAbertura)}</span>
                   </div>
 
