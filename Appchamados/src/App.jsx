@@ -1186,9 +1186,6 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
       formData.append('nome', nome)
       formData.append('sobrenome', sobrenome)
       formData.append('funcao', funcao)
-      if (telefone) {
-        formData.append('telefone', telefone)
-      }
       if (foto) {
         formData.append('foto', foto)
       }
@@ -1200,7 +1197,7 @@ function SettingsPage({ user, onNotify, onRefreshUser, onUserUpdated }) {
         nome: `${nome} ${sobrenome}`.trim(),
         sobrenome,
         funcao,
-        telefone: telefone || user?.telefone || '',
+        telefone: result?.user?.telefone || user?.telefone || '',
       }
       const updatedProfile = result?.user || optimisticUser
 
