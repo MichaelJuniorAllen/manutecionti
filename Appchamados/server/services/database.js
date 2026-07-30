@@ -54,35 +54,53 @@ function normalizeDatabaseShape(db) {
 }
 
 async function ensurePostgresDatabase() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS app_state (
-      id TEXT PRIMARY KEY,
-      data JSONB NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `)
+  const MAX_RETRIES = 5
+  const RETRY_DELAY_MS = 5000
 
-  await pool.query(
-    `
-      INSERT INTO app_state (id, data)
-      VALUES ($1, $2::jsonb)
-      ON CONFLICT (id) DO NOTHING
-    `,
-    [STATE_ROW_ID, JSON.stringify(cloneDefaultDatabase())],
-  )
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS app_state (
+          id TEXT PRIMARY KEY,
+          data JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `)
 
-  const current = await pool.query('SELECT data FROM app_state WHERE id = $1', [STATE_ROW_ID])
-  const data = current.rows[0]?.data || cloneDefaultDatabase()
-  const { normalized, shouldPersist } = normalizeDatabaseShape(data)
+      await pool.query(
+        `
+          INSERT INTO app_state (id, data)
+          VALUES ($1, $2::jsonb)
+          ON CONFLICT (id) DO NOTHING
+        `,
+        [STATE_ROW_ID, JSON.stringify(cloneDefaultDatabase())],
+      )
 
-  if (shouldPersist) {
-    await pool.query('UPDATE app_state SET data = $2::jsonb, updated_at = NOW() WHERE id = $1', [
-      STATE_ROW_ID,
-      JSON.stringify(normalized),
-    ])
+      const current = await pool.query('SELECT data FROM app_state WHERE id = $1', [STATE_ROW_ID])
+      const data = current.rows[0]?.data || cloneDefaultDatabase()
+      const { normalized, shouldPersist } = normalizeDatabaseShape(data)
+
+      if (shouldPersist) {
+        await pool.query('UPDATE app_state SET data = $2::jsonb, updated_at = NOW() WHERE id = $1', [
+          STATE_ROW_ID,
+          JSON.stringify(normalized),
+        ])
+      }
+
+      console.log('Conexão com PostgreSQL estabelecida com sucesso.')
+      return normalized
+    } catch (error) {
+      console.error(`[DB] Tentativa ${attempt}/${MAX_RETRIES} falhou: ${error.message}`)
+      if (attempt < MAX_RETRIES) {
+        console.log(`[DB] Aguardando ${RETRY_DELAY_MS / 1000}s antes de tentar novamente...`)
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
+      } else {
+        console.error('[DB] Todas as tentativas de conexão com PostgreSQL falharam.')
+        console.error('[DB] Verifique se DATABASE_URL está correto e o banco não expirou (Render free tier expira em 90 dias).')
+        throw error
+      }
+    }
   }
-
-  return normalized
 }
 
 async function readPostgresDatabase() {
