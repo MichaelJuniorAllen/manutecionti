@@ -26,13 +26,19 @@ if (usingPostgres) {
   pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: forceSsl ? { rejectUnauthorized: false } : false,
+    // keepAlive envia pacotes TCP para manter a conexão ativa e evitar que
+    // o PostgreSQL encerre conexões ociosas inesperadamente.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
+    // Descarta clientes ociosos após 30s — bem antes do timeout do servidor PostgreSQL.
+    idleTimeoutMillis: 30000,
+    // Limite de tentativa de conexão: 10s.
+    connectionTimeoutMillis: 10000,
   })
 
-  // Sem este handler, uma conexão ociosa encerrada pelo servidor PostgreSQL
-  // (timeout de rede, reinicialização do DB, etc.) emite 'error' sem tratamento
-  // e derruba todo o processo Node. Com o handler, o pool reconecta sozinho.
+  // Captura erros de clientes ociosos no pool (conexão encerrada pelo servidor).
   pool.on('error', (err) => {
-    console.error('[DB] Conexão do pool encerrada inesperadamente:', err.message)
+    console.error('[DB] Erro no pool de conexões PostgreSQL:', err.message)
   })
 }
 
