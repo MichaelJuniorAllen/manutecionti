@@ -640,9 +640,11 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
       } else {
         onNotify('success', 'Status atualizado com sucesso.')
       }
-      await loadTickets()
+      // Recarrega silenciosamente — o sync periódico garante consistência mesmo se falhar
+      await loadTickets({ silent: true, notifyOnError: false })
     } catch (error) {
-      onNotify('error', error.message)
+      const isNetworkError = !error.message || error.message.toLowerCase().includes('fetch')
+      onNotify('error', isNetworkError ? 'Sem conexão com o servidor. Verifique sua internet e tente novamente.' : error.message)
     }
   }
 
