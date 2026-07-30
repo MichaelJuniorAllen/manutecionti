@@ -27,6 +27,13 @@ if (usingPostgres) {
     connectionString: process.env.DATABASE_URL,
     ssl: forceSsl ? { rejectUnauthorized: false } : false,
   })
+
+  // Sem este handler, uma conexão ociosa encerrada pelo servidor PostgreSQL
+  // (timeout de rede, reinicialização do DB, etc.) emite 'error' sem tratamento
+  // e derruba todo o processo Node. Com o handler, o pool reconecta sozinho.
+  pool.on('error', (err) => {
+    console.error('[DB] Conexão do pool encerrada inesperadamente:', err.message)
+  })
 }
 
 function cloneDefaultDatabase() {
