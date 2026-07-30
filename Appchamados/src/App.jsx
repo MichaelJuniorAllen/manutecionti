@@ -587,9 +587,10 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
 
     // Fallback de sincronização entre contas: atualiza periodicamente
     // mesmo quando o stream não disparar por reconexão/rede.
+    // 20s é suficiente pois o EventSource já cobre atualizações em tempo real.
     const syncInterval = window.setInterval(() => {
       loadTickets({ silent: true, notifyOnError: false })
-    }, 2000)
+    }, 20000)
 
     return () => {
       window.removeEventListener('focus', handleWindowFocus)
@@ -627,24 +628,35 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
   }, [loadTickets])
 
   async function handleUpdateStatus(ticketId, status, extras = {}) {
-    try {
-      const payload = { status, ...extras }
+    const MAX_RETRIES = 3
+    const RETRY_DELAY_MS = 3000
 
-      await api.tickets.updateStatus(ticketId, payload)
-      if (status === 'Concluído') {
-        onNotify('success', 'Chamado concluído e enviado para o seu histórico.')
-      } else if (status === 'Aguardando Continuação') {
-        onNotify('success', 'Atendimento pausado. Chamado disponível para continuação.')
-      } else if (status === 'Em andamento') {
-        onNotify('success', 'Atendimento iniciado com sucesso.')
-      } else {
-        onNotify('success', 'Status atualizado com sucesso.')
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const payload = { status, ...extras }
+        await api.tickets.updateStatus(ticketId, payload)
+
+        if (status === 'Concluído') {
+          onNotify('success', 'Chamado concluído e enviado para o seu histórico.')
+        } else if (status === 'Aguardando Continuação') {
+          onNotify('success', 'Atendimento pausado. Chamado disponível para continuação.')
+        } else if (status === 'Em andamento') {
+          onNotify('success', 'Atendimento iniciado com sucesso.')
+        } else {
+          onNotify('success', 'Status atualizado com sucesso.')
+        }
+        await loadTickets({ silent: true, notifyOnError: false })
+        return
+      } catch (error) {
+        const isNetworkError = !error.message || error.message.toLowerCase().includes('fetch')
+        if (isNetworkError && attempt < MAX_RETRIES) {
+          // Servidor momentaneamente indisponível (reiniciando) — tenta novamente
+          await new Promise((resolve) => window.setTimeout(resolve, RETRY_DELAY_MS))
+          continue
+        }
+        onNotify('error', isNetworkError ? 'Servidor indisponível após várias tentativas. Aguarde e tente novamente.' : error.message)
+        return
       }
-      // Recarrega silenciosamente — o sync periódico garante consistência mesmo se falhar
-      await loadTickets({ silent: true, notifyOnError: false })
-    } catch (error) {
-      const isNetworkError = !error.message || error.message.toLowerCase().includes('fetch')
-      onNotify('error', isNetworkError ? 'Sem conexão com o servidor. Verifique sua internet e tente novamente.' : error.message)
     }
   }
 
