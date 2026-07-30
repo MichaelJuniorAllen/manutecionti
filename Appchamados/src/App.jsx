@@ -512,6 +512,7 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
   const [tickets, setTickets] = useState([])
   const [todayTickets, setTodayTickets] = useState([])
   const [loading, setLoading] = useState(true)
+  const [connectError, setConnectError] = useState(null)
 
   function getOpenAndInProgress(items) {
     return (items || []).filter((ticket) => ticket.status !== 'Concluído')
@@ -542,7 +543,7 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
     return isSameLocalDay(referenceDate)
   }
 
-  const loadTickets = useCallback(async ({ silent = false, notifyOnError = true } = {}) => {
+  const loadTickets = useCallback(async ({ silent = false, notifyOnError = true, isInitial = false } = {}) => {
     try {
       if (!silent) {
         setLoading(true)
@@ -552,8 +553,13 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
       const allTickets = result.tickets || []
       setTickets(getOpenAndInProgress(allTickets))
       setTodayTickets(allTickets.filter((ticket) => isTicketFromCurrentDay(ticket)))
+      setConnectError(null)
     } catch (error) {
-      if (notifyOnError) {
+      if (isInitial) {
+        // Cold start do servidor (ex: Render free tier): mostra banner de reconexão
+        // em vez de toast de erro. O sync periódico vai reconectar automaticamente.
+        setConnectError('Não foi possível conectar ao servidor. Reconectando automaticamente...')
+      } else if (notifyOnError) {
         onNotify('error', error.message)
       }
     } finally {
@@ -564,7 +570,7 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
   }, [])
 
   useEffect(() => {
-    loadTickets()
+    loadTickets({ isInitial: true })
 
     function handleVisibilityChange() {
       if (document.visibilityState === 'visible') {
@@ -646,6 +652,9 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
 
   return (
     <>
+      {connectError && (
+        <div className="toast-message warning">{connectError}</div>
+      )}
       <Stats tickets={todayTickets} currentUserId={currentUserId} />
       <TicketList
         tickets={tickets}
