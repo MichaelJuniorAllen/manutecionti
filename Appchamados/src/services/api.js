@@ -1,6 +1,7 @@
 const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : '/api')
 const TOKEN_KEY = 'chamados_token'
 const DEFAULT_REQUEST_TIMEOUT_MS = 5000
+const AUTH_REQUEST_TIMEOUT_MS = 12000
 
 export function getApiOrigin() {
   if (API_BASE.startsWith('http://') || API_BASE.startsWith('https://')) {
@@ -88,7 +89,12 @@ async function request(path, options = {}) {
       body: options.formData ? options.body : options.body ? JSON.stringify(options.body) : undefined,
     })
   } catch (error) {
-    if (error?.name === 'AbortError') {
+    const timedOut = error?.name === 'AbortError'
+      || error?.message === 'REQUEST_TIMEOUT'
+      || error?.code === 'REQUEST_TIMEOUT'
+      || (controller.signal.aborted && controller.signal.reason?.message === 'REQUEST_TIMEOUT')
+
+    if (timedOut) {
       const timeoutError = new Error('Servidor demorou para responder. Tente novamente em alguns segundos.')
       timeoutError.status = 408
       timeoutError.code = 'REQUEST_TIMEOUT'
@@ -157,7 +163,7 @@ export const api = {
       return request('/auth/resend-registration-email', { method: 'POST', body: { email }, token: null })
     },
     login(payload) {
-      return request('/auth/login', { method: 'POST', body: payload, token: null })
+      return request('/auth/login', { method: 'POST', body: payload, token: null, timeoutMs: AUTH_REQUEST_TIMEOUT_MS })
     },
     forgotPassword(email) {
       return request('/auth/forgot-password', { method: 'POST', body: { email }, token: null })
@@ -169,12 +175,12 @@ export const api = {
       return request('/auth/confirm-password-reset', { method: 'POST', body: payload, token: null })
     },
     session() {
-      return request('/auth/session')
+      return request('/auth/session', { timeoutMs: AUTH_REQUEST_TIMEOUT_MS })
     },
   },
   profile: {
     me() {
-      return request('/profile/me')
+      return request('/profile/me', { timeoutMs: AUTH_REQUEST_TIMEOUT_MS })
     },
     update(formData) {
       return request('/profile/me', { method: 'PUT', body: formData, formData: true })
