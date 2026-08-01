@@ -92,15 +92,41 @@ function ensureAttendancesCollection(db) {
   }
 }
 
-function getTicketSessions(db, ticketId) {
+function buildSessionsByTicketIndex(db) {
   ensureAttendancesCollection(db)
-  return db.atendimentos
-    .filter((item) => String(item.chamado_id) === String(ticketId))
-    .sort((a, b) => new Date(a.inicio).getTime() - new Date(b.inicio).getTime())
+
+  const sessionsByTicket = new Map()
+
+  for (const attendance of db.atendimentos) {
+    const ticketId = String(attendance?.chamado_id || '')
+    if (!ticketId) continue
+
+    const sessions = sessionsByTicket.get(ticketId)
+    if (sessions) {
+      sessions.push(attendance)
+    } else {
+      sessionsByTicket.set(ticketId, [attendance])
+    }
+  }
+
+  for (const sessions of sessionsByTicket.values()) {
+    sessions.sort((a, b) => new Date(a.inicio).getTime() - new Date(b.inicio).getTime())
+  }
+
+  return sessionsByTicket
 }
 
-function getActiveSession(db, ticketId) {
-  const sessions = getTicketSessions(db, ticketId)
+function getTicketSessions(db, ticketId, sessionsByTicket = null) {
+  if (sessionsByTicket) {
+    return sessionsByTicket.get(String(ticketId)) || []
+  }
+
+  const indexedSessions = buildSessionsByTicketIndex(db)
+  return indexedSessions.get(String(ticketId)) || []
+}
+
+function getActiveSession(db, ticketId, sessionsByTicket = null) {
+  const sessions = getTicketSessions(db, ticketId, sessionsByTicket)
   return [...sessions].reverse().find((session) => !session.fim && session.status === 'Em andamento') || null
 }
 
@@ -150,8 +176,8 @@ function getSessionActionLabel(session) {
   return session.status
 }
 
-function recomputeTicketTimesFromSessions(db, ticket) {
-  const sessions = getTicketSessions(db, ticket.id)
+function recomputeTicketTimesFromSessions(db, ticket, sessionsByTicket = null) {
+  const sessions = getTicketSessions(db, ticket.id, sessionsByTicket)
   const now = nowIso()
 
   const totalWorked = sessions.reduce((acc, session) => {
@@ -159,7 +185,7 @@ function recomputeTicketTimesFromSessions(db, ticket) {
     return Number.isFinite(minutes) && minutes >= 0 ? acc + minutes : acc
   }, 0)
 
-  const activeSession = getActiveSession(db, ticket.id)
+  const activeSession = getActiveSession(db, ticket.id, sessionsByTicket)
   const inProgressMinutes = activeSession
     ? computeSessionWorkedMinutes(activeSession, now)
     : null
@@ -253,19 +279,30 @@ async function resolveUserFromStreamToken(token) {
   const db = await readDatabase()
   const user = db.usuarios.find((item) => item.id === payload.sub)
   if (!user) {
-    throw new Error('Usuário não encontrado para esta sessão.')
+    const error = new Error('Usuário não encontrado para esta sessão.')
+    error.code = 'AUTH_USER_NOT_FOUND'
+    throw error
   }
   return user
 }
 
-function toTicketResponse(ticket, db = null) {
+function isInvalidStreamTokenError(error) {
+  return error?.name === 'TokenExpiredError'
+    || error?.name === 'JsonWebTokenError'
+    || error?.name === 'NotBeforeError'
+    || error?.code === 'AUTH_USER_NOT_FOUND'
+}
+
+function toTicketResponse(ticket, db = null, options = {}) {
+  const now = options.nowIso || nowIso()
+  const sessionsByTicket = options.sessionsByTicket || null
   const totalResolution = getTicketTotalResolutionMinutes(ticket)
   const inProgressResolution = getTicketInProgressMinutes(ticket)
-  const sessions = db ? getTicketSessions(db, ticket.id) : []
+  const sessions = db ? getTicketSessions(db, ticket.id, sessionsByTicket) : []
   const mappedSessions = sessions.map((session) => {
     const parsed = toSessionResponse(session)
     if (!parsed.fim) {
-      const liveWorked = computeSessionWorkedMinutes(session, nowIso())
+      const liveWorked = computeSessionWorkedMinutes(session, now)
       if (Number.isFinite(liveWorked) && liveWorked >= 0) {
         parsed.tempoTrabalhado = liveWorked
       }
@@ -274,7 +311,7 @@ function toTicketResponse(ticket, db = null) {
   })
   const lastSession = mappedSessions.length ? mappedSessions[mappedSessions.length - 1] : null
   const activeSession = [...sessions].reverse().find((session) => !session.fim && session.status === 'Em andamento') || null
-  const inProgressFromSessions = activeSession ? computeSessionWorkedMinutes(activeSession, nowIso()) : null
+  const inProgressFromSessions = activeSession ? computeSessionWorkedMinutes(activeSession, now) : null
   const totalWorkedFromSessions = mappedSessions.reduce((acc, item) => {
     return Number.isFinite(item.tempoTrabalhado) ? acc + item.tempoTrabalhado : acc
   }, 0)
@@ -391,14 +428,21 @@ router.get('/stream', async (req, res) => {
   const token = queryToken || headerToken
 
   if (!token) {
-    return res.status(401).json({ message: 'Sessão inválida. Faça login novamente.' })
+    return res.status(401).json({ code: 'AUTH_REQUIRED', message: 'Sessão inválida. Faça login novamente.' })
   }
 
   let user
   try {
     user = await resolveUserFromStreamToken(token)
-  } catch {
-    return res.status(401).json({ message: 'Token expirado ou inválido.' })
+  } catch (error) {
+    if (isInvalidStreamTokenError(error)) {
+      return res.status(401).json({ code: 'AUTH_TOKEN_INVALID', message: 'Token expirado ou inválido.' })
+    }
+
+    return res.status(503).json({
+      code: 'AUTH_VALIDATION_UNAVAILABLE',
+      message: 'Não foi possível validar sua sessão agora. Tente novamente em instantes.',
+    })
   }
 
   res.setHeader('Content-Type', 'text/event-stream')
@@ -438,6 +482,8 @@ router.use(requireAuth)
 router.get('/my', async (req, res) => {
   const db = await readDatabase()
   ensureAttendancesCollection(db)
+  const sessionsByTicket = buildSessionsByTicketIndex(db)
+  const currentNowIso = nowIso()
 
   const {
     day,
@@ -474,7 +520,7 @@ router.get('/my', async (req, res) => {
       if (area && area !== 'todos' && normalize(item.area) !== normalize(area)) return false
       if (responsible && responsible !== 'todos' && normalize(item.tecnico_responsavel) !== normalize(responsible)) return false
 
-      const sessions = getTicketSessions(db, item.id)
+      const sessions = getTicketSessions(db, item.id, sessionsByTicket)
       const lastSession = sessions.length ? sessions[sessions.length - 1] : null
 
       if (lastAction && lastAction !== 'todos') {
@@ -494,7 +540,9 @@ router.get('/my', async (req, res) => {
       return true
     })
 
-  return res.json({ tickets: filtered.map((ticket) => toTicketResponse(ticket, db)) })
+  return res.json({
+    tickets: filtered.map((ticket) => toTicketResponse(ticket, db, { sessionsByTicket, nowIso: currentNowIso })),
+  })
 })
 
 router.patch('/:id/status', async (req, res) => {

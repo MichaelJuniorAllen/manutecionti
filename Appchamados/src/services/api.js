@@ -94,6 +94,7 @@ async function request(path, options = {}) {
     const rawMessage = String(data.rawMessage || '').trim()
     const defaultMessage = rawMessage || `Erro ao processar requisição (HTTP ${response.status}).`
     let friendlyMessage = data.message || defaultMessage
+    const errorCode = String(data.code || '').trim()
 
     if (response.status === 404 && path === '/profile/request-phone-change') {
       friendlyMessage = 'Funcionalidade de SMS indisponível no servidor atual. Reinicie o backend para carregar as novas rotas.'
@@ -101,7 +102,9 @@ async function request(path, options = {}) {
 
     if (response.status === 401) {
       const message = String(data.message || '').toLowerCase()
-      const isSessionError = message.includes('token expirado')
+      const isSessionError = errorCode === 'AUTH_REQUIRED'
+        || errorCode === 'AUTH_TOKEN_INVALID'
+        || message.includes('token expirado')
         || message.includes('sessão inválida')
         || message.includes('sessao invalida')
         || message.includes('token expirado ou inválido')
@@ -112,7 +115,10 @@ async function request(path, options = {}) {
       }
     }
 
-    throw new Error(friendlyMessage)
+    const error = new Error(friendlyMessage)
+    error.status = response.status
+    error.code = errorCode
+    throw error
   }
 
   return data

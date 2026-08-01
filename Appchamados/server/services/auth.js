@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'chamados-secret-dev'
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h'
+const JWT_EXPIRES_IN = String(process.env.JWT_EXPIRES_IN || '').trim()
 
 function normalizeUserRole(value = '') {
   const role = String(value).trim().toLowerCase()
@@ -25,6 +25,8 @@ export function comparePassword(password, hash) {
 }
 
 export function createToken(user) {
+  const signOptions = JWT_EXPIRES_IN ? { expiresIn: JWT_EXPIRES_IN } : undefined
+
   return jwt.sign(
     {
       sub: user.id,
@@ -32,7 +34,7 @@ export function createToken(user) {
       name: user.nome,
     },
     JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN },
+    signOptions,
   )
 }
 

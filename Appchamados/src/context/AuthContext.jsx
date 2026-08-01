@@ -38,9 +38,14 @@ export function AuthProvider({ children }) {
           return
         } catch (error) {
           const message = String(error?.message || '').toLowerCase()
+          const errorCode = String(error?.code || '').trim()
           // Erro real de autenticação (token inválido/expirado) → deslogar
-          const isAuthError = message.includes('sessão') || message.includes('token')
-            || message.includes('expirado') || message.includes('inválid') || message.includes('invalido')
+          const isAuthError = errorCode === 'AUTH_REQUIRED'
+            || errorCode === 'AUTH_TOKEN_INVALID'
+            || (Number(error?.status) === 401 && (
+              message.includes('sessão') || message.includes('token')
+              || message.includes('expirado') || message.includes('inválid') || message.includes('invalido')
+            ))
 
           if (isAuthError) {
             setStoredToken(null)
