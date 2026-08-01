@@ -273,7 +273,7 @@ function App() {
       isSyncingNotificationStateRef.current = true
 
       try {
-        const result = await api.tickets.mine({}, { timeoutMs: 4000 })
+        const result = await api.tickets.mine({}, { timeoutMs: 5000 })
         const allTickets = result.tickets || []
         const openTickets = allTickets.filter((ticket) => ticket.status !== 'Concluído')
 
