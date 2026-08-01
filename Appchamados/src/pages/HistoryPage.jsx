@@ -48,7 +48,7 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
         setLoading(true)
       }
 
-      const result = await api.tickets.mine()
+      const result = await api.tickets.mine({}, { timeoutMs: 5000 })
       writeTicketsCache({}, result)
       const allTickets = result.tickets || []
       setTickets(getOpenAndInProgress(allTickets))
@@ -121,13 +121,13 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
   }, [loadTickets])
 
   async function handleUpdateStatus(ticketId, status, extras = {}) {
-    const MAX_RETRIES = 3
-    const RETRY_DELAY_MS = 3000
+    const MAX_RETRIES = 2
+    const RETRY_DELAY_MS = 700
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         const payload = { status, ...extras }
-        await api.tickets.updateStatus(ticketId, payload)
+        await api.tickets.updateStatus(ticketId, payload, { timeoutMs: 4500 })
 
         if (status === 'Concluído') {
           onNotify('success', 'Chamado concluído e enviado para o seu histórico.')
@@ -141,7 +141,10 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
         await loadTickets({ silent: true, notifyOnError: false })
         return
       } catch (error) {
-        const isNetworkError = !error.message || error.message.toLowerCase().includes('fetch')
+        const isNetworkError = !error.message
+          || error.message.toLowerCase().includes('fetch')
+          || error.code === 'REQUEST_TIMEOUT'
+          || Number(error?.status) === 408
         if (isNetworkError && attempt < MAX_RETRIES) {
           await new Promise((resolve) => window.setTimeout(resolve, RETRY_DELAY_MS))
           continue

@@ -32,8 +32,10 @@ if (usingPostgres) {
     keepAliveInitialDelayMillis: 10000,
     // Descarta clientes ociosos após 30s — bem antes do timeout do servidor PostgreSQL.
     idleTimeoutMillis: 30000,
-    // Limite de tentativa de conexão: 10s.
-    connectionTimeoutMillis: 10000,
+    // Limite de tentativa de conexão: 5s para falhar rápido quando indisponível.
+    connectionTimeoutMillis: 5000,
+    // Limite por consulta para evitar travas longas na UI.
+    query_timeout: 6000,
   })
 
   // Captura erros de clientes ociosos no pool (conexão encerrada pelo servidor).
