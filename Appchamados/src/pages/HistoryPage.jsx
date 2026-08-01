@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
-import Stats from '../components/Stats'
-import TicketList from '../components/TicketList'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { api } from '../services/api'
 import { readTicketsCache, writeTicketsCache } from './pageHelpers'
+
+const Stats = lazy(() => import('../components/Stats'))
+const TicketList = lazy(() => import('../components/TicketList'))
 
 function getOpenAndInProgress(items) {
   return (items || []).filter((ticket) => ticket.status !== 'Concluído')
@@ -160,13 +161,17 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
       {connectError ? (
         <div className="toast-message warning">{connectError}</div>
       ) : null}
-      <Stats tickets={todayTickets} currentUserId={currentUserId} />
-      <TicketList
-        tickets={tickets}
-        onUpdateStatus={handleUpdateStatus}
-        currentUserId={currentUserId}
-        currentUserName={currentUserName}
-      />
+      <Suspense fallback={<div className="loading-block">Carregando indicadores...</div>}>
+        <Stats tickets={todayTickets} currentUserId={currentUserId} />
+      </Suspense>
+      <Suspense fallback={<div className="loading-block">Carregando lista de chamados...</div>}>
+        <TicketList
+          tickets={tickets}
+          onUpdateStatus={handleUpdateStatus}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+        />
+      </Suspense>
     </>
   )
 }

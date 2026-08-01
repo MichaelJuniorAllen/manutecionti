@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import HomePage from './components/HomePage'
@@ -10,11 +10,17 @@ import { useAuth } from './context/AuthContext'
 import { api } from './services/api'
 import { formatPriority, getFullName } from './pages/pageHelpers'
 
-const NewTicketPage = lazy(() => import('./pages/NewTicketPage'))
-const HistoryPage = lazy(() => import('./pages/HistoryPage'))
-const ProfilePage = lazy(() => import('./pages/ProfilePage'))
-const MyHistoryPage = lazy(() => import('./pages/MyHistoryPage'))
-const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const loadNewTicketPage = () => import('./pages/NewTicketPage')
+const loadHistoryPage = () => import('./pages/HistoryPage')
+const loadProfilePage = () => import('./pages/ProfilePage')
+const loadMyHistoryPage = () => import('./pages/MyHistoryPage')
+const loadSettingsPage = () => import('./pages/SettingsPage')
+
+const NewTicketPage = lazy(loadNewTicketPage)
+const HistoryPage = lazy(loadHistoryPage)
+const ProfilePage = lazy(loadProfilePage)
+const MyHistoryPage = lazy(loadMyHistoryPage)
+const SettingsPage = lazy(loadSettingsPage)
 
 function playAlertSound() {
   try {
@@ -147,9 +153,9 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [siteNotice])
 
-  function notify(type, message) {
+  const notify = useCallback((type, message) => {
     setToast({ type, message })
-  }
+  }, [])
 
   function handleLogout() {
     logout()
@@ -167,6 +173,44 @@ function App() {
 
     navigate('/')
   }
+
+  const prefetchRoute = useCallback((path) => {
+    switch (path) {
+      case '/novo-chamado': {
+        void loadNewTicketPage()
+        return
+      }
+      case '/chamados': {
+        // Antecipar também os chunks internos carregados na rota de chamados.
+        void Promise.all([
+          loadHistoryPage(),
+          import('./components/Stats'),
+          import('./components/TicketList'),
+        ])
+        return
+      }
+      case '/perfil': {
+        void Promise.all([
+          loadProfilePage(),
+          import('./components/UserDashboard'),
+        ])
+        return
+      }
+      case '/meu-historico': {
+        void loadMyHistoryPage()
+        return
+      }
+      case '/configuracoes': {
+        void Promise.all([
+          loadSettingsPage(),
+          import('react-easy-crop'),
+        ])
+        return
+      }
+      default:
+        return
+    }
+  }, [])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -324,6 +368,7 @@ function App() {
               open={menuOpen}
               onToggle={() => setMenuOpen((current) => !current)}
               onClose={() => setMenuOpen(false)}
+              onRouteIntent={prefetchRoute}
               onLogout={handleLogout}
             />
           ) : null}

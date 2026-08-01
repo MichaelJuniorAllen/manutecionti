@@ -12,6 +12,14 @@ export default defineConfig({
             return undefined
           }
 
+          if (id.includes('html2canvas')) {
+            return 'html2canvas'
+          }
+
+          if (id.includes('uuid')) {
+            return 'uuid'
+          }
+
           if (id.includes('jspdf') || id.includes('jspdf-autotable')) {
             return 'pdf'
           }
@@ -24,8 +32,16 @@ export default defineConfig({
             return 'charts'
           }
 
+          if (id.includes('react-transition-group')) {
+            return 'motion'
+          }
+
           if (id.includes('react-router-dom') || id.includes('react-dom') || id.includes('/react/')) {
             return 'react'
+          }
+
+          if (id.includes('@babel/runtime')) {
+            return 'runtime'
           }
 
           return 'vendor'
