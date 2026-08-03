@@ -51,6 +51,7 @@ const PAUSE_REASONS = new Set([
 
 const streamClients = new Set()
 const TEN_MINUTES_MS = 10 * 60 * 1000
+const DUPLICATE_TICKET_WINDOW_MS = 60000
 let reminderLoopInitialized = false
 let reminderLoopBusy = false
 
@@ -344,6 +345,29 @@ function toTicketResponse(ticket, db = null, options = {}) {
   }
 }
 
+function findRecentDuplicateTicket(db, payload, userId) {
+  const now = Date.now()
+
+  return db.chamados.find((ticket) => {
+    const openedAtMs = new Date(ticket?.data_abertura).getTime()
+    if (!Number.isFinite(openedAtMs)) return false
+
+    if (now - openedAtMs > DUPLICATE_TICKET_WINDOW_MS) {
+      return false
+    }
+
+    const sameUser = String(ticket?.usuario_id || '') === String(userId || '')
+    const sameRequester = normalize(ticket?.solicitante || '') === normalize(payload.solicitante || '')
+
+    return sameUser
+      && normalize(ticket?.titulo || '') === normalize(payload.titulo)
+      && normalize(ticket?.descricao || '') === normalize(payload.descricao)
+      && normalize(ticket?.area || '') === normalize(payload.area)
+      && normalize(ticket?.tecnico_responsavel || '') === normalize(payload.tecnico_responsavel || '')
+      && sameRequester
+  })
+}
+
 router.post('/', optionalAuth, async (req, res) => {
   const payload = {
     titulo: (req.body.titulo || '').trim(),
@@ -366,11 +390,23 @@ router.post('/', optionalAuth, async (req, res) => {
 
   try {
     let created
+    let wasDuplicate = false
     await mutateDatabase(async (db) => {
       const openedAt = nowIso()
       const dueAt = new Date(Date.now() + priorityToMinutes[payload.prioridade] * 60000).toISOString()
       const userId = req.auth?.user?.id || null
       const requester = payload.solicitante || req.auth?.user?.nome || 'Visitante'
+
+      const duplicate = findRecentDuplicateTicket(db, {
+        ...payload,
+        solicitante: requester,
+      }, userId)
+
+      if (duplicate) {
+        wasDuplicate = true
+        created = toTicketResponse(duplicate, db)
+        return
+      }
 
       const ticket = {
         id: nextNumericId(db.chamados),
@@ -408,6 +444,18 @@ router.post('/', optionalAuth, async (req, res) => {
 
       created = toTicketResponse(ticket, db)
     })
+
+    if (!created) {
+      return res.status(500).json({ message: 'Não foi possível processar a abertura do chamado.' })
+    }
+
+    if (wasDuplicate) {
+      return res.status(200).json({
+        message: 'Chamado já registrado há instantes. Retornando o chamado existente para evitar duplicidade.',
+        ticket: created,
+        duplicate: true,
+      })
+    }
 
     broadcastTicketEvent({
       type: 'ticket-created',
