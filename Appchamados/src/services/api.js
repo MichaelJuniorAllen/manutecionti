@@ -1,6 +1,6 @@
 const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : '/api')
 const TOKEN_KEY = 'chamados_token'
-const DEFAULT_REQUEST_TIMEOUT_MS = 5000
+const DEFAULT_REQUEST_TIMEOUT_MS = 15000
 const AUTH_REQUEST_TIMEOUT_MS = 12000
 
 export function getApiOrigin() {

@@ -36,6 +36,7 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const submitLockRef = useRef(false)
+  const submitRequestIdRef = useRef('')
 
   function handleChange(event) {
     const { name, value } = event.target
@@ -48,8 +49,12 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
     submitLockRef.current = true
     setLoading(true)
 
+    if (!submitRequestIdRef.current) {
+      submitRequestIdRef.current = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    }
+
     try {
-      await onSubmitTicket?.(formValues)
+      await onSubmitTicket?.(formValues, { clientRequestId: submitRequestIdRef.current })
       setFormValues({
         title: '',
         area: '',
@@ -58,6 +63,7 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
         responsible: '',
         description: '',
       })
+      submitRequestIdRef.current = ''
       setMessage('Seu chamado foi aberto com sucesso!')
 
       window.setTimeout(() => {

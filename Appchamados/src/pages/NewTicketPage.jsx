@@ -5,7 +5,7 @@ import { api } from '../services/api'
 function NewTicketPage({ onNotify }) {
   const navigate = useNavigate()
 
-  async function handleSubmitTicket(values) {
+  async function handleSubmitTicket(values, options = {}) {
     await api.tickets.create({
       titulo: values.title,
       descricao: values.description,
@@ -15,6 +15,7 @@ function NewTicketPage({ onNotify }) {
       prioridade: values.priority,
       tecnicoResponsavel: values.responsible,
       observacoes: values.description,
+      clientRequestId: options.clientRequestId || '',
     })
     onNotify('success', 'Seu chamado foi aberto com sucesso!')
   }

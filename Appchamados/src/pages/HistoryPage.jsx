@@ -34,6 +34,24 @@ function isTicketFromCurrentDay(ticket) {
   return isSameLocalDay(referenceDate)
 }
 
+async function retry(action, { attempts = 3, waitMs = 1200 } = {}) {
+  let lastError
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await action()
+    } catch (error) {
+      lastError = error
+      if (attempt >= attempts) {
+        break
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, waitMs * attempt))
+    }
+  }
+
+  throw lastError
+}
+
 function HistoryPage({ onNotify, currentUserId, currentUserName }) {
   const cachedInitialTickets = readTicketsCache()
   const initialTickets = cachedInitialTickets?.tickets || []
@@ -48,7 +66,10 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
         setLoading(true)
       }
 
-      const result = await api.tickets.mine({}, { timeoutMs: 5000 })
+      const result = await retry(
+        () => api.tickets.mine({}, { timeoutMs: 20000 }),
+        { attempts: isInitial ? 3 : 2, waitMs: 1200 },
+      )
       writeTicketsCache({}, result)
       const allTickets = result.tickets || []
       setTickets(getOpenAndInProgress(allTickets))

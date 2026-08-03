@@ -51,7 +51,7 @@ const PAUSE_REASONS = new Set([
 
 const streamClients = new Set()
 const TEN_MINUTES_MS = 10 * 60 * 1000
-const DUPLICATE_TICKET_WINDOW_MS = 60000
+const DUPLICATE_TICKET_WINDOW_MS = 5 * 60 * 1000
 let reminderLoopInitialized = false
 let reminderLoopBusy = false
 
@@ -368,6 +368,19 @@ function findRecentDuplicateTicket(db, payload, userId) {
   })
 }
 
+function findTicketByClientRequestId(db, clientRequestId, userId) {
+  const requestId = String(clientRequestId || '').trim()
+  if (!requestId) return null
+
+  return db.chamados.find((ticket) => {
+    if (String(ticket?.client_request_id || '') !== requestId) {
+      return false
+    }
+
+    return String(ticket?.usuario_id || '') === String(userId || '')
+  }) || null
+}
+
 router.post('/', optionalAuth, async (req, res) => {
   const payload = {
     titulo: (req.body.titulo || '').trim(),
@@ -378,6 +391,7 @@ router.post('/', optionalAuth, async (req, res) => {
     prioridade: (req.body.prioridade || 'media').trim().toLowerCase(),
     tecnico_responsavel: (req.body.tecnicoResponsavel || '').trim(),
     observacoes: (req.body.observacoes || '').trim(),
+    client_request_id: (req.body.clientRequestId || '').trim(),
   }
 
   if (!payload.titulo || !payload.descricao || !payload.area) {
@@ -396,6 +410,13 @@ router.post('/', optionalAuth, async (req, res) => {
       const dueAt = new Date(Date.now() + priorityToMinutes[payload.prioridade] * 60000).toISOString()
       const userId = req.auth?.user?.id || null
       const requester = payload.solicitante || req.auth?.user?.nome || 'Visitante'
+
+      const sameRequestTicket = findTicketByClientRequestId(db, payload.client_request_id, userId)
+      if (sameRequestTicket) {
+        wasDuplicate = true
+        created = toTicketResponse(sameRequestTicket, db)
+        return
+      }
 
       const duplicate = findRecentDuplicateTicket(db, {
         ...payload,
@@ -425,6 +446,7 @@ router.post('/', optionalAuth, async (req, res) => {
         tempo_resolucao: null,
         tempo_andamento: null,
         observacoes: payload.observacoes,
+        client_request_id: payload.client_request_id || null,
         due_at: dueAt,
         atendente_id: null,
         atendente_nome: null,
