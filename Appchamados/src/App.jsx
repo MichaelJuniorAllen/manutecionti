@@ -221,6 +221,23 @@ function App() {
       return undefined
     }
 
+    async function warmupBackend() {
+      const attempts = 2
+      for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        try {
+          await api.health.ping({ timeoutMs: 25000 })
+          return
+        } catch {
+          if (attempt >= attempts) {
+            return
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 1000 * attempt))
+        }
+      }
+    }
+
+    warmupBackend()
+
     function updateNotificationPreferenceFromStorage() {
       const stored = localStorage.getItem('chamados_notifications')
       notificationsEnabledRef.current = stored == null ? true : stored === 'true'

@@ -142,12 +142,12 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
   }, [loadTickets])
 
   async function handleUpdateStatus(ticketId, status, extras = {}) {
-    const MAX_RETRIES = 1
+    const MAX_RETRIES = 3
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         const payload = { status, ...extras }
-        await api.tickets.updateStatus(ticketId, payload, { timeoutMs: 5000 })
+        await api.tickets.updateStatus(ticketId, payload, { timeoutMs: 15000 })
 
         if (status === 'Concluído') {
           onNotify('success', 'Chamado concluído e enviado para o seu histórico.')
@@ -166,6 +166,7 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
           || error.code === 'REQUEST_TIMEOUT'
           || Number(error?.status) === 408
         if (isNetworkError && attempt < MAX_RETRIES) {
+          await new Promise((resolve) => window.setTimeout(resolve, 800 * attempt))
           continue
         }
         onNotify('error', isNetworkError ? 'Servidor indisponível após várias tentativas. Aguarde e tente novamente.' : error.message)

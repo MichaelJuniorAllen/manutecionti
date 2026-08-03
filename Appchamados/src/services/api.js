@@ -152,6 +152,11 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  health: {
+    ping(requestOptions = {}) {
+      return request('/health', { token: null, ...requestOptions })
+    },
+  },
   auth: {
     register(formData) {
       return request('/auth/register', { method: 'POST', body: formData, formData: true, token: null })

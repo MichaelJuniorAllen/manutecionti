@@ -16,6 +16,9 @@ function parseArgs(argv) {
   const args = new Set(argv)
   const apply = args.has('--apply')
   const dryRun = !apply
+  const modeArg = argv.find((item) => item.startsWith('--mode='))
+  const modeValue = String(modeArg?.split('=')[1] || 'safe').trim().toLowerCase()
+  const mode = modeValue === 'aggressive' ? 'aggressive' : 'safe'
   const windowArg = argv.find((item) => item.startsWith('--window-minutes='))
   const parsedWindow = Number(windowArg?.split('=')[1])
   const windowMinutes = Number.isFinite(parsedWindow) && parsedWindow > 0
@@ -25,6 +28,7 @@ function parseArgs(argv) {
   return {
     apply,
     dryRun,
+    mode,
     windowMinutes,
   }
 }
@@ -41,7 +45,13 @@ function buildFingerprint(ticket) {
   ].join('|')
 }
 
-function isSafeCandidate(ticket, historyCount, historyEntries, attendanceCount) {
+function isSafeCandidate(ticket, historyCount, historyEntries, attendanceCount, mode) {
+  if (mode === 'aggressive') {
+    if (!ticket) return false
+    if (ticket.status === 'Concluído') return false
+    return true
+  }
+
   if (!ticket || ticket.status !== 'Aberto') return false
   if (attendanceCount > 0) return false
   if (historyCount > 1) return false
@@ -53,7 +63,7 @@ function isSafeCandidate(ticket, historyCount, historyEntries, attendanceCount) 
   return historyEntries.every((entry) => normalize(entry?.acao_realizada) === normalize('Chamado criado'))
 }
 
-function buildDuplicatePlan(db, windowMinutes) {
+function buildDuplicatePlan(db, windowMinutes, mode = 'safe') {
   const windowMs = Math.max(1, Number(windowMinutes)) * 60 * 1000
   const attendances = Array.isArray(db?.atendimentos) ? db.atendimentos : []
   const history = Array.isArray(db?.historico) ? db.historico : []
@@ -83,7 +93,7 @@ function buildDuplicatePlan(db, windowMinutes) {
       const id = String(ticket?.id || '')
       const ticketHistory = historyByTicketId.get(id) || []
       const ticketAttendanceCount = attendanceCountByTicketId.get(id) || 0
-      return isSafeCandidate(ticket, ticketHistory.length, ticketHistory, ticketAttendanceCount)
+      return isSafeCandidate(ticket, ticketHistory.length, ticketHistory, ticketAttendanceCount, mode)
     })
     .sort((left, right) => {
       const diff = toMs(left?.data_abertura) - toMs(right?.data_abertura)
@@ -191,8 +201,9 @@ async function run() {
 
   if (options.dryRun) {
     const db = await readDatabase()
-    const plan = buildDuplicatePlan(db, options.windowMinutes)
+    const plan = buildDuplicatePlan(db, options.windowMinutes, options.mode)
 
+    console.log(`[DRY-RUN] Modo: ${options.mode}`)
     console.log(`[DRY-RUN] Janela: ${options.windowMinutes} minutos`)
     console.log(`[DRY-RUN] Duplicados elegíveis encontrados: ${plan.length}`)
 
@@ -211,15 +222,17 @@ async function run() {
 
   let summary = null
   await mutateDatabase(async (db) => {
-    const plan = buildDuplicatePlan(db, options.windowMinutes)
+    const plan = buildDuplicatePlan(db, options.windowMinutes, options.mode)
     const stats = applyPlan(db, plan)
     summary = {
+      mode: options.mode,
       windowMinutes: options.windowMinutes,
       plannedDuplicates: plan.length,
       ...stats,
     }
   })
 
+  console.log(`[APPLY] Modo: ${summary.mode}`)
   console.log(`[APPLY] Janela: ${summary.windowMinutes} minutos`)
   console.log(`[APPLY] Duplicados tratados: ${summary.plannedDuplicates}`)
   console.log(`[APPLY] Chamados removidos: ${summary.removedTickets}`)
