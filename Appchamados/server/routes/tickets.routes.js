@@ -201,6 +201,22 @@ function createHttpError(statusCode, message) {
   return error
 }
 
+function isTransientDbError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  const code = String(error?.code || '').toUpperCase()
+
+  if (code === 'ETIMEDOUT' || code === 'ECONNRESET' || code === 'ECONNREFUSED') {
+    return true
+  }
+
+  return message.includes('timeout')
+    || message.includes('timed out')
+    || message.includes('connection terminated')
+    || message.includes('read timeout')
+    || message.includes('could not connect')
+    || message.includes('tempo limite')
+}
+
 function sendStreamEvent(res, payload) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`)
 }
@@ -550,69 +566,80 @@ router.get('/stream', async (req, res) => {
 router.use(requireAuth)
 
 router.get('/my', async (req, res) => {
-  const db = await readDatabase()
-  ensureAttendancesCollection(db)
-  const sessionsByTicket = buildSessionsByTicketIndex(db)
-  const currentNowIso = nowIso()
+  try {
+    const db = await readDatabase()
+    ensureAttendancesCollection(db)
+    const sessionsByTicket = buildSessionsByTicketIndex(db)
+    const currentNowIso = nowIso()
 
-  const {
-    day,
-    month,
-    year,
-    status,
-    priority,
-    area,
-    responsible,
-    search,
-    lastAction,
-    pauseReason,
-  } = req.query
+    const {
+      day,
+      month,
+      year,
+      status,
+      priority,
+      area,
+      responsible,
+      search,
+      lastAction,
+      pauseReason,
+    } = req.query
 
-  const filtered = db.chamados
-    .filter((item) => {
-      const openedAt = new Date(item.data_abertura)
-      if (Number.isNaN(openedAt.getTime())) return false
+    const filtered = db.chamados
+      .filter((item) => {
+        const openedAt = new Date(item.data_abertura)
+        if (Number.isNaN(openedAt.getTime())) return false
 
-      const dayNumber = Number(day)
-      const monthNumber = Number(month)
-      const yearNumber = Number(year)
+        const dayNumber = Number(day)
+        const monthNumber = Number(month)
+        const yearNumber = Number(year)
 
-      const hasDay = Number.isFinite(dayNumber) && dayNumber >= 1 && dayNumber <= 31
-      const hasMonth = Number.isFinite(monthNumber) && monthNumber >= 1 && monthNumber <= 12
-      const hasYear = Number.isFinite(yearNumber) && yearNumber >= 1900
+        const hasDay = Number.isFinite(dayNumber) && dayNumber >= 1 && dayNumber <= 31
+        const hasMonth = Number.isFinite(monthNumber) && monthNumber >= 1 && monthNumber <= 12
+        const hasYear = Number.isFinite(yearNumber) && yearNumber >= 1900
 
-      if (hasDay && openedAt.getDate() !== dayNumber) return false
-      if (hasMonth && openedAt.getMonth() + 1 !== monthNumber) return false
-      if (hasYear && openedAt.getFullYear() !== yearNumber) return false
+        if (hasDay && openedAt.getDate() !== dayNumber) return false
+        if (hasMonth && openedAt.getMonth() + 1 !== monthNumber) return false
+        if (hasYear && openedAt.getFullYear() !== yearNumber) return false
 
-      if (status && status !== 'todos' && item.status !== status) return false
-      if (priority && priority !== 'todos' && item.prioridade !== priority) return false
-      if (area && area !== 'todos' && normalize(item.area) !== normalize(area)) return false
-      if (responsible && responsible !== 'todos' && normalize(item.tecnico_responsavel) !== normalize(responsible)) return false
+        if (status && status !== 'todos' && item.status !== status) return false
+        if (priority && priority !== 'todos' && item.prioridade !== priority) return false
+        if (area && area !== 'todos' && normalize(item.area) !== normalize(area)) return false
+        if (responsible && responsible !== 'todos' && normalize(item.tecnico_responsavel) !== normalize(responsible)) return false
 
-      const sessions = getTicketSessions(db, item.id, sessionsByTicket)
-      const lastSession = sessions.length ? sessions[sessions.length - 1] : null
+        const sessions = getTicketSessions(db, item.id, sessionsByTicket)
+        const lastSession = sessions.length ? sessions[sessions.length - 1] : null
 
-      if (lastAction && lastAction !== 'todos') {
-        const action = getSessionActionLabel(lastSession)
-        if (normalize(action) !== normalize(String(lastAction))) return false
-      }
+        if (lastAction && lastAction !== 'todos') {
+          const action = getSessionActionLabel(lastSession)
+          if (normalize(action) !== normalize(String(lastAction))) return false
+        }
 
-      if (pauseReason && pauseReason !== 'todos') {
-        const hasPauseReason = sessions.some((session) => normalize(session?.motivo_pausa || '') === normalize(String(pauseReason)))
-        if (!hasPauseReason) return false
-      }
+        if (pauseReason && pauseReason !== 'todos') {
+          const hasPauseReason = sessions.some((session) => normalize(session?.motivo_pausa || '') === normalize(String(pauseReason)))
+          if (!hasPauseReason) return false
+        }
 
-      if (search) {
-        const haystack = `${item.numero_chamado} ${item.area} ${item.tecnico_responsavel}`.toLowerCase()
-        if (!haystack.includes(String(search).toLowerCase())) return false
-      }
-      return true
+        if (search) {
+          const haystack = `${item.numero_chamado} ${item.area} ${item.tecnico_responsavel}`.toLowerCase()
+          if (!haystack.includes(String(search).toLowerCase())) return false
+        }
+        return true
+      })
+
+    return res.json({
+      tickets: filtered.map((ticket) => toTicketResponse(ticket, db, { sessionsByTicket, nowIso: currentNowIso })),
     })
+  } catch (error) {
+    if (isTransientDbError(error)) {
+      return res.status(503).json({
+        code: 'DB_TEMPORARILY_UNAVAILABLE',
+        message: 'Banco de dados temporariamente indisponível. Tente novamente em alguns segundos.',
+      })
+    }
 
-  return res.json({
-    tickets: filtered.map((ticket) => toTicketResponse(ticket, db, { sessionsByTicket, nowIso: currentNowIso })),
-  })
+    return res.status(500).json({ message: error.message || 'Não foi possível carregar os chamados.' })
+  }
 })
 
 router.patch('/:id/status', async (req, res) => {
@@ -821,6 +848,13 @@ router.patch('/:id/status', async (req, res) => {
 
     return res.json({ message: 'Status atualizado com sucesso.', ticket: updated })
   } catch (error) {
+    if (isTransientDbError(error)) {
+      return res.status(503).json({
+        code: 'DB_TEMPORARILY_UNAVAILABLE',
+        message: 'Banco de dados temporariamente indisponível. Tente novamente em alguns segundos.',
+      })
+    }
+
     return res.status(error.statusCode || 400).json({ message: error.message || 'Não foi possível atualizar o chamado.' })
   }
 })
