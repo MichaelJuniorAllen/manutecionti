@@ -51,6 +51,7 @@ const PAUSE_REASONS = new Set([
 
 const streamClients = new Set()
 const TEN_MINUTES_MS = 10 * 60 * 1000
+const DUPLICATE_TICKET_WINDOW_MS = 5 * 60 * 1000
 let reminderLoopInitialized = false
 let reminderLoopBusy = false
 
@@ -92,15 +93,41 @@ function ensureAttendancesCollection(db) {
   }
 }
 
-function getTicketSessions(db, ticketId) {
+function buildSessionsByTicketIndex(db) {
   ensureAttendancesCollection(db)
-  return db.atendimentos
-    .filter((item) => String(item.chamado_id) === String(ticketId))
-    .sort((a, b) => new Date(a.inicio).getTime() - new Date(b.inicio).getTime())
+
+  const sessionsByTicket = new Map()
+
+  for (const attendance of db.atendimentos) {
+    const ticketId = String(attendance?.chamado_id || '')
+    if (!ticketId) continue
+
+    const sessions = sessionsByTicket.get(ticketId)
+    if (sessions) {
+      sessions.push(attendance)
+    } else {
+      sessionsByTicket.set(ticketId, [attendance])
+    }
+  }
+
+  for (const sessions of sessionsByTicket.values()) {
+    sessions.sort((a, b) => new Date(a.inicio).getTime() - new Date(b.inicio).getTime())
+  }
+
+  return sessionsByTicket
 }
 
-function getActiveSession(db, ticketId) {
-  const sessions = getTicketSessions(db, ticketId)
+function getTicketSessions(db, ticketId, sessionsByTicket = null) {
+  if (sessionsByTicket) {
+    return sessionsByTicket.get(String(ticketId)) || []
+  }
+
+  const indexedSessions = buildSessionsByTicketIndex(db)
+  return indexedSessions.get(String(ticketId)) || []
+}
+
+function getActiveSession(db, ticketId, sessionsByTicket = null) {
+  const sessions = getTicketSessions(db, ticketId, sessionsByTicket)
   return [...sessions].reverse().find((session) => !session.fim && session.status === 'Em andamento') || null
 }
 
@@ -150,8 +177,8 @@ function getSessionActionLabel(session) {
   return session.status
 }
 
-function recomputeTicketTimesFromSessions(db, ticket) {
-  const sessions = getTicketSessions(db, ticket.id)
+function recomputeTicketTimesFromSessions(db, ticket, sessionsByTicket = null) {
+  const sessions = getTicketSessions(db, ticket.id, sessionsByTicket)
   const now = nowIso()
 
   const totalWorked = sessions.reduce((acc, session) => {
@@ -159,7 +186,7 @@ function recomputeTicketTimesFromSessions(db, ticket) {
     return Number.isFinite(minutes) && minutes >= 0 ? acc + minutes : acc
   }, 0)
 
-  const activeSession = getActiveSession(db, ticket.id)
+  const activeSession = getActiveSession(db, ticket.id, sessionsByTicket)
   const inProgressMinutes = activeSession
     ? computeSessionWorkedMinutes(activeSession, now)
     : null
@@ -172,6 +199,22 @@ function createHttpError(statusCode, message) {
   const error = new Error(message)
   error.statusCode = statusCode
   return error
+}
+
+function isTransientDbError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  const code = String(error?.code || '').toUpperCase()
+
+  if (code === 'ETIMEDOUT' || code === 'ECONNRESET' || code === 'ECONNREFUSED') {
+    return true
+  }
+
+  return message.includes('timeout')
+    || message.includes('timed out')
+    || message.includes('connection terminated')
+    || message.includes('read timeout')
+    || message.includes('could not connect')
+    || message.includes('tempo limite')
 }
 
 function sendStreamEvent(res, payload) {
@@ -253,19 +296,30 @@ async function resolveUserFromStreamToken(token) {
   const db = await readDatabase()
   const user = db.usuarios.find((item) => item.id === payload.sub)
   if (!user) {
-    throw new Error('Usuário não encontrado para esta sessão.')
+    const error = new Error('Usuário não encontrado para esta sessão.')
+    error.code = 'AUTH_USER_NOT_FOUND'
+    throw error
   }
   return user
 }
 
-function toTicketResponse(ticket, db = null) {
+function isInvalidStreamTokenError(error) {
+  return error?.name === 'TokenExpiredError'
+    || error?.name === 'JsonWebTokenError'
+    || error?.name === 'NotBeforeError'
+    || error?.code === 'AUTH_USER_NOT_FOUND'
+}
+
+function toTicketResponse(ticket, db = null, options = {}) {
+  const now = options.nowIso || nowIso()
+  const sessionsByTicket = options.sessionsByTicket || null
   const totalResolution = getTicketTotalResolutionMinutes(ticket)
   const inProgressResolution = getTicketInProgressMinutes(ticket)
-  const sessions = db ? getTicketSessions(db, ticket.id) : []
+  const sessions = db ? getTicketSessions(db, ticket.id, sessionsByTicket) : []
   const mappedSessions = sessions.map((session) => {
     const parsed = toSessionResponse(session)
     if (!parsed.fim) {
-      const liveWorked = computeSessionWorkedMinutes(session, nowIso())
+      const liveWorked = computeSessionWorkedMinutes(session, now)
       if (Number.isFinite(liveWorked) && liveWorked >= 0) {
         parsed.tempoTrabalhado = liveWorked
       }
@@ -274,7 +328,7 @@ function toTicketResponse(ticket, db = null) {
   })
   const lastSession = mappedSessions.length ? mappedSessions[mappedSessions.length - 1] : null
   const activeSession = [...sessions].reverse().find((session) => !session.fim && session.status === 'Em andamento') || null
-  const inProgressFromSessions = activeSession ? computeSessionWorkedMinutes(activeSession, nowIso()) : null
+  const inProgressFromSessions = activeSession ? computeSessionWorkedMinutes(activeSession, now) : null
   const totalWorkedFromSessions = mappedSessions.reduce((acc, item) => {
     return Number.isFinite(item.tempoTrabalhado) ? acc + item.tempoTrabalhado : acc
   }, 0)
@@ -307,6 +361,42 @@ function toTicketResponse(ticket, db = null) {
   }
 }
 
+function findRecentDuplicateTicket(db, payload, userId) {
+  const now = Date.now()
+
+  return db.chamados.find((ticket) => {
+    const openedAtMs = new Date(ticket?.data_abertura).getTime()
+    if (!Number.isFinite(openedAtMs)) return false
+
+    if (now - openedAtMs > DUPLICATE_TICKET_WINDOW_MS) {
+      return false
+    }
+
+    const sameUser = String(ticket?.usuario_id || '') === String(userId || '')
+    const sameRequester = normalize(ticket?.solicitante || '') === normalize(payload.solicitante || '')
+
+    return sameUser
+      && normalize(ticket?.titulo || '') === normalize(payload.titulo)
+      && normalize(ticket?.descricao || '') === normalize(payload.descricao)
+      && normalize(ticket?.area || '') === normalize(payload.area)
+      && normalize(ticket?.tecnico_responsavel || '') === normalize(payload.tecnico_responsavel || '')
+      && sameRequester
+  })
+}
+
+function findTicketByClientRequestId(db, clientRequestId, userId) {
+  const requestId = String(clientRequestId || '').trim()
+  if (!requestId) return null
+
+  return db.chamados.find((ticket) => {
+    if (String(ticket?.client_request_id || '') !== requestId) {
+      return false
+    }
+
+    return String(ticket?.usuario_id || '') === String(userId || '')
+  }) || null
+}
+
 router.post('/', optionalAuth, async (req, res) => {
   const payload = {
     titulo: (req.body.titulo || '').trim(),
@@ -317,6 +407,7 @@ router.post('/', optionalAuth, async (req, res) => {
     prioridade: (req.body.prioridade || 'media').trim().toLowerCase(),
     tecnico_responsavel: (req.body.tecnicoResponsavel || '').trim(),
     observacoes: (req.body.observacoes || '').trim(),
+    client_request_id: (req.body.clientRequestId || '').trim(),
   }
 
   if (!payload.titulo || !payload.descricao || !payload.area) {
@@ -329,11 +420,30 @@ router.post('/', optionalAuth, async (req, res) => {
 
   try {
     let created
+    let wasDuplicate = false
     await mutateDatabase(async (db) => {
       const openedAt = nowIso()
       const dueAt = new Date(Date.now() + priorityToMinutes[payload.prioridade] * 60000).toISOString()
       const userId = req.auth?.user?.id || null
       const requester = payload.solicitante || req.auth?.user?.nome || 'Visitante'
+
+      const sameRequestTicket = findTicketByClientRequestId(db, payload.client_request_id, userId)
+      if (sameRequestTicket) {
+        wasDuplicate = true
+        created = toTicketResponse(sameRequestTicket, db)
+        return
+      }
+
+      const duplicate = findRecentDuplicateTicket(db, {
+        ...payload,
+        solicitante: requester,
+      }, userId)
+
+      if (duplicate) {
+        wasDuplicate = true
+        created = toTicketResponse(duplicate, db)
+        return
+      }
 
       const ticket = {
         id: nextNumericId(db.chamados),
@@ -352,6 +462,7 @@ router.post('/', optionalAuth, async (req, res) => {
         tempo_resolucao: null,
         tempo_andamento: null,
         observacoes: payload.observacoes,
+        client_request_id: payload.client_request_id || null,
         due_at: dueAt,
         atendente_id: null,
         atendente_nome: null,
@@ -372,6 +483,18 @@ router.post('/', optionalAuth, async (req, res) => {
       created = toTicketResponse(ticket, db)
     })
 
+    if (!created) {
+      return res.status(500).json({ message: 'Não foi possível processar a abertura do chamado.' })
+    }
+
+    if (wasDuplicate) {
+      return res.status(200).json({
+        message: 'Chamado já registrado há instantes. Retornando o chamado existente para evitar duplicidade.',
+        ticket: created,
+        duplicate: true,
+      })
+    }
+
     broadcastTicketEvent({
       type: 'ticket-created',
       ticketId: created?.id || null,
@@ -391,14 +514,21 @@ router.get('/stream', async (req, res) => {
   const token = queryToken || headerToken
 
   if (!token) {
-    return res.status(401).json({ message: 'Sessão inválida. Faça login novamente.' })
+    return res.status(401).json({ code: 'AUTH_REQUIRED', message: 'Sessão inválida. Faça login novamente.' })
   }
 
   let user
   try {
     user = await resolveUserFromStreamToken(token)
-  } catch {
-    return res.status(401).json({ message: 'Token expirado ou inválido.' })
+  } catch (error) {
+    if (isInvalidStreamTokenError(error)) {
+      return res.status(401).json({ code: 'AUTH_TOKEN_INVALID', message: 'Token expirado ou inválido.' })
+    }
+
+    return res.status(503).json({
+      code: 'AUTH_VALIDATION_UNAVAILABLE',
+      message: 'Não foi possível validar sua sessão agora. Tente novamente em instantes.',
+    })
   }
 
   res.setHeader('Content-Type', 'text/event-stream')
@@ -436,65 +566,80 @@ router.get('/stream', async (req, res) => {
 router.use(requireAuth)
 
 router.get('/my', async (req, res) => {
-  const db = await readDatabase()
-  ensureAttendancesCollection(db)
+  try {
+    const db = await readDatabase()
+    ensureAttendancesCollection(db)
+    const sessionsByTicket = buildSessionsByTicketIndex(db)
+    const currentNowIso = nowIso()
 
-  const {
-    day,
-    month,
-    year,
-    status,
-    priority,
-    area,
-    responsible,
-    search,
-    lastAction,
-    pauseReason,
-  } = req.query
+    const {
+      day,
+      month,
+      year,
+      status,
+      priority,
+      area,
+      responsible,
+      search,
+      lastAction,
+      pauseReason,
+    } = req.query
 
-  const filtered = db.chamados
-    .filter((item) => {
-      const openedAt = new Date(item.data_abertura)
-      if (Number.isNaN(openedAt.getTime())) return false
+    const filtered = db.chamados
+      .filter((item) => {
+        const openedAt = new Date(item.data_abertura)
+        if (Number.isNaN(openedAt.getTime())) return false
 
-      const dayNumber = Number(day)
-      const monthNumber = Number(month)
-      const yearNumber = Number(year)
+        const dayNumber = Number(day)
+        const monthNumber = Number(month)
+        const yearNumber = Number(year)
 
-      const hasDay = Number.isFinite(dayNumber) && dayNumber >= 1 && dayNumber <= 31
-      const hasMonth = Number.isFinite(monthNumber) && monthNumber >= 1 && monthNumber <= 12
-      const hasYear = Number.isFinite(yearNumber) && yearNumber >= 1900
+        const hasDay = Number.isFinite(dayNumber) && dayNumber >= 1 && dayNumber <= 31
+        const hasMonth = Number.isFinite(monthNumber) && monthNumber >= 1 && monthNumber <= 12
+        const hasYear = Number.isFinite(yearNumber) && yearNumber >= 1900
 
-      if (hasDay && openedAt.getDate() !== dayNumber) return false
-      if (hasMonth && openedAt.getMonth() + 1 !== monthNumber) return false
-      if (hasYear && openedAt.getFullYear() !== yearNumber) return false
+        if (hasDay && openedAt.getDate() !== dayNumber) return false
+        if (hasMonth && openedAt.getMonth() + 1 !== monthNumber) return false
+        if (hasYear && openedAt.getFullYear() !== yearNumber) return false
 
-      if (status && status !== 'todos' && item.status !== status) return false
-      if (priority && priority !== 'todos' && item.prioridade !== priority) return false
-      if (area && area !== 'todos' && normalize(item.area) !== normalize(area)) return false
-      if (responsible && responsible !== 'todos' && normalize(item.tecnico_responsavel) !== normalize(responsible)) return false
+        if (status && status !== 'todos' && item.status !== status) return false
+        if (priority && priority !== 'todos' && item.prioridade !== priority) return false
+        if (area && area !== 'todos' && normalize(item.area) !== normalize(area)) return false
+        if (responsible && responsible !== 'todos' && normalize(item.tecnico_responsavel) !== normalize(responsible)) return false
 
-      const sessions = getTicketSessions(db, item.id)
-      const lastSession = sessions.length ? sessions[sessions.length - 1] : null
+        const sessions = getTicketSessions(db, item.id, sessionsByTicket)
+        const lastSession = sessions.length ? sessions[sessions.length - 1] : null
 
-      if (lastAction && lastAction !== 'todos') {
-        const action = getSessionActionLabel(lastSession)
-        if (normalize(action) !== normalize(String(lastAction))) return false
-      }
+        if (lastAction && lastAction !== 'todos') {
+          const action = getSessionActionLabel(lastSession)
+          if (normalize(action) !== normalize(String(lastAction))) return false
+        }
 
-      if (pauseReason && pauseReason !== 'todos') {
-        const hasPauseReason = sessions.some((session) => normalize(session?.motivo_pausa || '') === normalize(String(pauseReason)))
-        if (!hasPauseReason) return false
-      }
+        if (pauseReason && pauseReason !== 'todos') {
+          const hasPauseReason = sessions.some((session) => normalize(session?.motivo_pausa || '') === normalize(String(pauseReason)))
+          if (!hasPauseReason) return false
+        }
 
-      if (search) {
-        const haystack = `${item.numero_chamado} ${item.area} ${item.tecnico_responsavel}`.toLowerCase()
-        if (!haystack.includes(String(search).toLowerCase())) return false
-      }
-      return true
+        if (search) {
+          const haystack = `${item.numero_chamado} ${item.area} ${item.tecnico_responsavel}`.toLowerCase()
+          if (!haystack.includes(String(search).toLowerCase())) return false
+        }
+        return true
+      })
+
+    return res.json({
+      tickets: filtered.map((ticket) => toTicketResponse(ticket, db, { sessionsByTicket, nowIso: currentNowIso })),
     })
+  } catch (error) {
+    if (isTransientDbError(error)) {
+      return res.status(503).json({
+        code: 'DB_TEMPORARILY_UNAVAILABLE',
+        message: 'Banco de dados temporariamente indisponível. Tente novamente em alguns segundos.',
+      })
+    }
 
-  return res.json({ tickets: filtered.map((ticket) => toTicketResponse(ticket, db)) })
+    return res.status(500).json({ message: error.message || 'Não foi possível carregar os chamados.' })
+  }
 })
 
 router.patch('/:id/status', async (req, res) => {
@@ -703,6 +848,13 @@ router.patch('/:id/status', async (req, res) => {
 
     return res.json({ message: 'Status atualizado com sucesso.', ticket: updated })
   } catch (error) {
+    if (isTransientDbError(error)) {
+      return res.status(503).json({
+        code: 'DB_TEMPORARILY_UNAVAILABLE',
+        message: 'Banco de dados temporariamente indisponível. Tente novamente em alguns segundos.',
+      })
+    }
+
     return res.status(error.statusCode || 400).json({ message: error.message || 'Não foi possível atualizar o chamado.' })
   }
 })

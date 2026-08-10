@@ -7,13 +7,14 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "start": "concurrently \"npm:server:dev\" \"npm:client\"",
+    "start": "node server/index.js",
     "dev": "concurrently \"npm:server:dev\" \"npm:client\"",
     "client": "vite",
     "server": "node server/index.js",
     "server:dev": "nodemon --watch server --ext js,mjs,cjs,json --ignore server/data/database.json --ignore public/uploads/** server/index.js",
     "migrate:legacy-attendances": "node server/scripts/migrate-legacy-attendances.js",
     "migrate:json-to-postgres": "node server/scripts/migrate-json-to-postgres.js",
+    "cleanup:duplicate-tickets": "node server/scripts/cleanup-duplicate-tickets.js",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"

@@ -16,6 +16,9 @@ const defaultDatabase = {
   configuracoes: {},
 }
 
+const DB_OPERATION_RETRIES = 3
+const DB_RETRY_BASE_DELAY_MS = 350
+
 const usingPostgres = Boolean(process.env.DATABASE_URL)
 
 let pool = null
@@ -26,6 +29,21 @@ if (usingPostgres) {
   pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: forceSsl ? { rejectUnauthorized: false } : false,
+    // keepAlive envia pacotes TCP para manter a conexão ativa e evitar que
+    // o PostgreSQL encerre conexões ociosas inesperadamente.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
+    // Descarta clientes ociosos após 30s — bem antes do timeout do servidor PostgreSQL.
+    idleTimeoutMillis: 30000,
+    // Limite de tentativa de conexão: 5s para falhar rápido quando indisponível.
+    connectionTimeoutMillis: 5000,
+    // Limite por consulta em produção: tolera cold-start/latência sem estourar fácil.
+    query_timeout: 20000,
+  })
+
+  // Captura erros de clientes ociosos no pool (conexão encerrada pelo servidor).
+  pool.on('error', (err) => {
+    console.error('[DB] Erro no pool de conexões PostgreSQL:', err.message)
   })
 }
 
@@ -53,47 +71,102 @@ function normalizeDatabaseShape(db) {
   return { normalized, shouldPersist }
 }
 
-async function ensurePostgresDatabase() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS app_state (
-      id TEXT PRIMARY KEY,
-      data JSONB NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `)
+function isTransientDbError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  const code = String(error?.code || '').toUpperCase()
 
-  await pool.query(
-    `
-      INSERT INTO app_state (id, data)
-      VALUES ($1, $2::jsonb)
-      ON CONFLICT (id) DO NOTHING
-    `,
-    [STATE_ROW_ID, JSON.stringify(cloneDefaultDatabase())],
-  )
-
-  const current = await pool.query('SELECT data FROM app_state WHERE id = $1', [STATE_ROW_ID])
-  const data = current.rows[0]?.data || cloneDefaultDatabase()
-  const { normalized, shouldPersist } = normalizeDatabaseShape(data)
-
-  if (shouldPersist) {
-    await pool.query('UPDATE app_state SET data = $2::jsonb, updated_at = NOW() WHERE id = $1', [
-      STATE_ROW_ID,
-      JSON.stringify(normalized),
-    ])
+  if (code === 'ETIMEDOUT' || code === 'ECONNRESET' || code === 'ECONNREFUSED') {
+    return true
   }
 
-  return normalized
+  return message.includes('timeout')
+    || message.includes('timed out')
+    || message.includes('connection terminated')
+    || message.includes('read timeout')
+    || message.includes('could not connect')
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function runWithDbRetry(action) {
+  let lastError
+
+  for (let attempt = 1; attempt <= DB_OPERATION_RETRIES; attempt += 1) {
+    try {
+      return await action()
+    } catch (error) {
+      lastError = error
+      if (!isTransientDbError(error) || attempt >= DB_OPERATION_RETRIES) {
+        throw error
+      }
+      await sleep(DB_RETRY_BASE_DELAY_MS * attempt)
+    }
+  }
+
+  throw lastError
+}
+
+async function ensurePostgresDatabase() {
+  const MAX_RETRIES = 5
+  const RETRY_DELAY_MS = 5000
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS app_state (
+          id TEXT PRIMARY KEY,
+          data JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `)
+
+      await pool.query(
+        `
+          INSERT INTO app_state (id, data)
+          VALUES ($1, $2::jsonb)
+          ON CONFLICT (id) DO NOTHING
+        `,
+        [STATE_ROW_ID, JSON.stringify(cloneDefaultDatabase())],
+      )
+
+      const current = await pool.query('SELECT data FROM app_state WHERE id = $1', [STATE_ROW_ID])
+      const data = current.rows[0]?.data || cloneDefaultDatabase()
+      const { normalized, shouldPersist } = normalizeDatabaseShape(data)
+
+      if (shouldPersist) {
+        await pool.query('UPDATE app_state SET data = $2::jsonb, updated_at = NOW() WHERE id = $1', [
+          STATE_ROW_ID,
+          JSON.stringify(normalized),
+        ])
+      }
+
+      console.log('Conexão com PostgreSQL estabelecida com sucesso.')
+      return normalized
+    } catch (error) {
+      console.error(`[DB] Tentativa ${attempt}/${MAX_RETRIES} falhou: ${error.message}`)
+      if (attempt < MAX_RETRIES) {
+        console.log(`[DB] Aguardando ${RETRY_DELAY_MS / 1000}s antes de tentar novamente...`)
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
+      } else {
+        console.error('[DB] Todas as tentativas de conexão com PostgreSQL falharam.')
+        console.error('[DB] Verifique se DATABASE_URL está correto e o banco não expirou (Render free tier expira em 90 dias).')
+        throw error
+      }
+    }
+  }
 }
 
 async function readPostgresDatabase() {
-  const result = await pool.query('SELECT data FROM app_state WHERE id = $1', [STATE_ROW_ID])
+  const result = await runWithDbRetry(() => pool.query('SELECT data FROM app_state WHERE id = $1', [STATE_ROW_ID]))
   const data = result.rows[0]?.data || cloneDefaultDatabase()
   const { normalized } = normalizeDatabaseShape(data)
   return normalized
 }
 
 async function mutatePostgresDatabase(mutator) {
-  const client = await pool.connect()
+  const client = await runWithDbRetry(() => pool.connect())
 
   try {
     await client.query('BEGIN')
@@ -176,10 +249,10 @@ export async function readDatabase() {
 
 export async function writeDatabase(data) {
   if (usingPostgres) {
-    await pool.query('UPDATE app_state SET data = $2::jsonb, updated_at = NOW() WHERE id = $1', [
+    await runWithDbRetry(() => pool.query('UPDATE app_state SET data = $2::jsonb, updated_at = NOW() WHERE id = $1', [
       STATE_ROW_ID,
       JSON.stringify(data),
-    ])
+    ]))
     return
   }
 

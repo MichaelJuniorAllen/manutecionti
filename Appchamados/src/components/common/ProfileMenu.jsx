@@ -16,7 +16,11 @@ function getFullName(user) {
   return firstName || 'Usuário'
 }
 
-function ProfileMenu({ user, open, onToggle, onClose, onLogout }) {
+function ProfileMenu({ user, open, onToggle, onClose, onRouteIntent, onLogout }) {
+  function triggerRouteIntent(path) {
+    onRouteIntent?.(path)
+  }
+
   return (
     <div className="profile-menu-wrapper">
       <button type="button" className="avatar-trigger" onClick={onToggle} aria-expanded={open}>
@@ -34,10 +38,38 @@ function ProfileMenu({ user, open, onToggle, onClose, onLogout }) {
           </div>
           <nav className="profile-links">
             <Link to="/" onClick={onClose}>Sistema de Chamados</Link>
-            <Link to="/perfil" onClick={onClose}>Grafico</Link>
-            <Link to="/chamados" onClick={onClose}>Chamados</Link>
-            <Link to="/meu-historico" onClick={onClose}>Meu Histórico</Link>
-            <Link to="/configuracoes" onClick={onClose}>Configurações</Link>
+            <Link
+              to="/perfil"
+              onMouseEnter={() => triggerRouteIntent('/perfil')}
+              onFocus={() => triggerRouteIntent('/perfil')}
+              onClick={onClose}
+            >
+              Grafico
+            </Link>
+            <Link
+              to="/chamados"
+              onMouseEnter={() => triggerRouteIntent('/chamados')}
+              onFocus={() => triggerRouteIntent('/chamados')}
+              onClick={onClose}
+            >
+              Chamados
+            </Link>
+            <Link
+              to="/meu-historico"
+              onMouseEnter={() => triggerRouteIntent('/meu-historico')}
+              onFocus={() => triggerRouteIntent('/meu-historico')}
+              onClick={onClose}
+            >
+              Meu Histórico
+            </Link>
+            <Link
+              to="/configuracoes"
+              onMouseEnter={() => triggerRouteIntent('/configuracoes')}
+              onFocus={() => triggerRouteIntent('/configuracoes')}
+              onClick={onClose}
+            >
+              Configurações
+            </Link>
             <button type="button" className="logout-menu-btn" onClick={onLogout}>Sair</button>
           </nav>
         </div>

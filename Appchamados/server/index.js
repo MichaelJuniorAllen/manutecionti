@@ -103,3 +103,20 @@ initializeApplication().catch((error) => {
   console.error('Falha na inicialização da aplicação:', error)
   process.exit(1)
 })
+
+// Safety net: captura erros não tratados que escapam do pool.on('error').
+// Impede que o servidor derrube por um erro de conexão PostgreSQL ociosa.
+process.on('uncaughtException', (error) => {
+  const isDbConnectionError = error.message?.includes('Connection terminated')
+    || error.message?.includes('ECONNREFUSED')
+    || error.message?.includes('ECONNRESET')
+    || error.message?.includes('connection')
+
+  if (isDbConnectionError) {
+    console.error('[AVISO] Erro de conexão com banco capturado (servidor continua rodando):', error.message)
+  } else {
+    // Erro inesperado real — logar e encerrar de forma segura
+    console.error('[ERRO FATAL] Exceção não tratada:', error)
+    process.exit(1)
+  }
+})

@@ -28,14 +28,42 @@ export function AuthProvider({ children }) {
       return
     }
 
-    syncUserFromProfile()
-      .catch(() => {
-        setStoredToken(null)
-        setUser(null)
-      })
-      .finally(() => {
-        setLoadingSession(false)
-      })
+    async function initSession() {
+      const MAX_RETRIES = 3
+      const RETRY_DELAY_MS = 3000
+
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          await syncUserFromProfile()
+          return
+        } catch (error) {
+          const message = String(error?.message || '').toLowerCase()
+          const errorCode = String(error?.code || '').trim()
+          // Erro real de autenticação (token inválido/expirado) → deslogar
+          const isAuthError = errorCode === 'AUTH_REQUIRED'
+            || errorCode === 'AUTH_TOKEN_INVALID'
+            || (Number(error?.status) === 401 && (
+              message.includes('sessão') || message.includes('token')
+              || message.includes('expirado') || message.includes('inválid') || message.includes('invalido')
+            ))
+
+          if (isAuthError) {
+            setStoredToken(null)
+            setUser(null)
+            return
+          }
+
+          // Erro de rede (servidor reiniciando) → tenta novamente antes de deslogar
+          if (attempt < MAX_RETRIES) {
+            await new Promise((resolve) => window.setTimeout(resolve, RETRY_DELAY_MS))
+          }
+          // Após todas as tentativas, mantém o token para que na próxima
+          // recarga da página a sessão seja restaurada automaticamente
+        }
+      }
+    }
+
+    initSession().finally(() => setLoadingSession(false))
   }, [])
 
   async function login(email, senha) {

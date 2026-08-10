@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { PRIORITY_OPTIONS } from '../utils/tickets'
 
 const RESPONSIBLE_OPTIONS = ['TI', 'Manutenção', 'Engenharia Clínica']
@@ -35,6 +35,8 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
   })
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const submitLockRef = useRef(false)
+  const submitRequestIdRef = useRef('')
 
   function handleChange(event) {
     const { name, value } = event.target
@@ -43,10 +45,16 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (submitLockRef.current) return
+    submitLockRef.current = true
     setLoading(true)
 
+    if (!submitRequestIdRef.current) {
+      submitRequestIdRef.current = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    }
+
     try {
-      await onSubmitTicket?.(formValues)
+      await onSubmitTicket?.(formValues, { clientRequestId: submitRequestIdRef.current })
       setFormValues({
         title: '',
         area: '',
@@ -55,6 +63,7 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
         responsible: '',
         description: '',
       })
+      submitRequestIdRef.current = ''
       setMessage('Seu chamado foi aberto com sucesso!')
 
       window.setTimeout(() => {
@@ -64,6 +73,7 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
       setMessage(error.message || 'Não foi possível registrar o chamado.')
     } finally {
       setLoading(false)
+      submitLockRef.current = false
     }
   }
 
