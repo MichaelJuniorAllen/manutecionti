@@ -54,6 +54,34 @@ const REGISTRATION_CODE_EXPIRES_MINUTES = 15
 const PASSWORD_RESET_CODE_EXPIRES_MINUTES = 15
 const exposeDebugCodes = String(process.env.EXPOSE_DEBUG_CODES || '').trim().toLowerCase() === 'true'
 
+function isDatabaseUnavailableError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  const code = String(error?.code || '').toUpperCase()
+
+  if (code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ETIMEDOUT') {
+    return true
+  }
+
+  return message.includes('econnrefused')
+    || message.includes('connection terminated')
+    || message.includes('could not connect')
+    || message.includes('timeout')
+    || message.includes('timed out')
+    || message.includes('read timeout')
+    || message.includes(':5432')
+}
+
+function respondWithSafeError(res, error, { defaultMessage, status = 400 } = {}) {
+  if (isDatabaseUnavailableError(error)) {
+    return res.status(503).json({
+      code: 'DATABASE_UNAVAILABLE',
+      message: 'Servidor temporariamente indisponível. Tente novamente em instantes.',
+    })
+  }
+
+  return res.status(status).json({ message: error.message || defaultMessage })
+}
+
 router.post('/register', upload.single('foto'), async (req, res) => {
   try {
     const nome = normalizeName(req.body.nome)
@@ -176,7 +204,7 @@ router.post('/register', upload.single('foto'), async (req, res) => {
       ...(exposeDebugCodes ? { debugCode: verificationCode } : {}),
     })
   } catch (error) {
-    return res.status(500).json({ message: error.message || 'Erro ao criar conta.' })
+    return respondWithSafeError(res, error, { status: 500, defaultMessage: 'Erro ao criar conta.' })
   }
 })
 
@@ -227,7 +255,7 @@ router.post('/confirm-registration-email', async (req, res) => {
       user: verifiedUser,
     })
   } catch (error) {
-    return res.status(400).json({ message: error.message || 'Não foi possível confirmar o e-mail.' })
+    return respondWithSafeError(res, error, { status: 400, defaultMessage: 'Não foi possível confirmar o e-mail.' })
   }
 })
 
@@ -274,7 +302,7 @@ router.post('/resend-registration-email', async (req, res) => {
       ...(exposeDebugCodes ? { debugCode: verificationCode } : {}),
     })
   } catch (error) {
-    return res.status(400).json({ message: error.message || 'Não foi possível reenviar o código.' })
+    return respondWithSafeError(res, error, { status: 400, defaultMessage: 'Não foi possível reenviar o código.' })
   }
 })
 
@@ -286,35 +314,39 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ message: 'Informe e-mail e senha.' })
   }
 
-  const db = await readDatabase()
-  const user = db.usuarios.find((item) => normalizeEmail(item.email) === email)
-  if (!user) {
-    return res.status(401).json({ message: 'Credenciais inválidas.' })
+  try {
+    const db = await readDatabase()
+    const user = db.usuarios.find((item) => normalizeEmail(item.email) === email)
+    if (!user) {
+      return res.status(401).json({ message: 'Credenciais inválidas.' })
+    }
+
+    if (user.email_verified === false) {
+      return res.status(403).json({ message: 'Sua conta ainda não foi validada. Verifique seu e-mail pessoal para confirmar o cadastro.' })
+    }
+
+    const valid = await comparePassword(senha, user.senha_hash)
+    if (!valid) {
+      return res.status(401).json({ message: 'Credenciais inválidas.' })
+    }
+
+    let sanitized
+    await mutateDatabase(async (mutableDb) => {
+      const found = mutableDb.usuarios.find((item) => item.id === user.id)
+      found.ultimo_acesso = nowIso()
+      sanitized = sanitizeUser(found)
+    })
+
+    const token = createToken({ ...user, ultimo_acesso: sanitized.ultimo_acesso })
+
+    return res.json({
+      message: 'Login realizado com sucesso.',
+      token,
+      user: sanitized,
+    })
+  } catch (error) {
+    return respondWithSafeError(res, error, { status: 500, defaultMessage: 'Não foi possível realizar login.' })
   }
-
-  if (user.email_verified === false) {
-    return res.status(403).json({ message: 'Sua conta ainda não foi validada. Verifique seu e-mail pessoal para confirmar o cadastro.' })
-  }
-
-  const valid = await comparePassword(senha, user.senha_hash)
-  if (!valid) {
-    return res.status(401).json({ message: 'Credenciais inválidas.' })
-  }
-
-  let sanitized
-  await mutateDatabase(async (mutableDb) => {
-    const found = mutableDb.usuarios.find((item) => item.id === user.id)
-    found.ultimo_acesso = nowIso()
-    sanitized = sanitizeUser(found)
-  })
-
-  const token = createToken({ ...user, ultimo_acesso: sanitized.ultimo_acesso })
-
-  return res.json({
-    message: 'Login realizado com sucesso.',
-    token,
-    user: sanitized,
-  })
 })
 
 router.post('/forgot-password', async (req, res) => {
@@ -359,7 +391,7 @@ router.post('/forgot-password', async (req, res) => {
       ...(exposeDebugCodes ? { debugCode: code } : {}),
     })
   } catch (error) {
-    return res.status(400).json({ message: error.message || 'Não foi possível iniciar a recuperação de senha.' })
+    return respondWithSafeError(res, error, { status: 400, defaultMessage: 'Não foi possível iniciar a recuperação de senha.' })
   }
 })
 
@@ -402,7 +434,7 @@ router.post('/confirm-password-reset', async (req, res) => {
 
     return res.json({ message: 'Senha redefinida com sucesso. Faça login novamente.' })
   } catch (error) {
-    return res.status(400).json({ message: error.message || 'Não foi possível redefinir a senha.' })
+    return respondWithSafeError(res, error, { status: 400, defaultMessage: 'Não foi possível redefinir a senha.' })
   }
 })
 
