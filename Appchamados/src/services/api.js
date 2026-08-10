@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : '/api')
+const API_BASE = import.meta.env.VITE_API_URL || '/api'
 const TOKEN_KEY = 'chamados_token'
 
 export function getApiOrigin() {
@@ -60,6 +60,7 @@ export function setStoredToken(token) {
 async function request(path, options = {}) {
   const token = options.token ?? getStoredToken()
   const headers = new Headers(options.headers || {})
+  const baseUrl = getApiBaseUrl()
 
   if (!options.formData) {
     headers.set('Content-Type', 'application/json')
@@ -72,12 +73,18 @@ async function request(path, options = {}) {
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: options.method || 'GET',
-    headers,
-    cache: 'no-store',
-    body: options.formData ? options.body : options.body ? JSON.stringify(options.body) : undefined,
-  })
+  let response
+
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      method: options.method || 'GET',
+      headers,
+      cache: 'no-store',
+      body: options.formData ? options.body : options.body ? JSON.stringify(options.body) : undefined,
+    })
+  } catch (error) {
+    throw new Error('Nao foi possivel conectar ao servidor. Confirme se o backend esta em execucao e tente novamente.')
+  }
 
   const raw = await response.text()
   let data = {}
