@@ -290,7 +290,7 @@ function App() {
       isSyncingNotificationStateRef.current = true
 
       try {
-        const result = await api.tickets.mine({}, { timeoutMs: 15000 })
+        const result = await api.tickets.mine({}, { timeoutMs: 7000 })
         const allTickets = result.tickets || []
         const openTickets = allTickets.filter((ticket) => ticket.status !== 'Concluído')
 
@@ -336,11 +336,14 @@ function App() {
       }
     }
 
-    syncNotificationState()
-    const periodicSync = window.setInterval(syncNotificationState, 20000)
+    const initialSyncTimer = window.setTimeout(() => {
+      syncNotificationState()
+    }, 2500)
+    const periodicSync = window.setInterval(syncNotificationState, 45000)
     window.addEventListener('storage', handleStorage)
 
     return () => {
+      window.clearTimeout(initialSyncTimer)
       window.clearInterval(periodicSync)
       window.removeEventListener('storage', handleStorage)
       eventSource?.close()

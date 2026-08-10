@@ -62,6 +62,11 @@ export function setStoredToken(token) {
 async function request(path, options = {}) {
   const token = options.token ?? getStoredToken()
   const headers = new Headers(options.headers || {})
+  const timeoutMs = Number.isFinite(options.timeoutMs)
+    ? Math.max(1000, Number(options.timeoutMs))
+    : DEFAULT_REQUEST_TIMEOUT_MS
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort('REQUEST_TIMEOUT'), timeoutMs)
 
   if (!options.formData) {
     headers.set('Content-Type', 'application/json')
@@ -74,12 +79,29 @@ async function request(path, options = {}) {
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: options.method || 'GET',
-    headers,
-    cache: 'no-store',
-    body: options.formData ? options.body : options.body ? JSON.stringify(options.body) : undefined,
-  })
+  let response
+
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: options.method || 'GET',
+      headers,
+      cache: 'no-store',
+      body: options.formData ? options.body : options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    const isAbortError = error?.name === 'AbortError' || error === 'REQUEST_TIMEOUT'
+    if (isAbortError) {
+      const timeoutError = new Error('Tempo limite de conexão excedido. Tente novamente.')
+      timeoutError.code = 'REQUEST_TIMEOUT'
+      timeoutError.status = 408
+      throw timeoutError
+    }
+
+    throw new Error('Não foi possível conectar ao servidor. Tente novamente em instantes.')
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
 
   const raw = await response.text()
   let data = {}
