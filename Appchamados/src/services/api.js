@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : '/api')
+const API_BASE = import.meta.env.VITE_API_URL || '/api'
 const TOKEN_KEY = 'chamados_token'
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000
 const AUTH_REQUEST_TIMEOUT_MS = 12000
@@ -62,11 +62,11 @@ export function setStoredToken(token) {
 async function request(path, options = {}) {
   const token = options.token ?? getStoredToken()
   const headers = new Headers(options.headers || {})
-  const timeoutMs = Number.isFinite(Number(options.timeoutMs)) ? Number(options.timeoutMs) : DEFAULT_REQUEST_TIMEOUT_MS
+  const timeoutMs = Number.isFinite(options.timeoutMs)
+    ? Math.max(1000, Number(options.timeoutMs))
+    : DEFAULT_REQUEST_TIMEOUT_MS
   const controller = new AbortController()
-  const timeoutId = globalThis.setTimeout(() => {
-    controller.abort(new Error('REQUEST_TIMEOUT'))
-  }, Math.max(1000, timeoutMs))
+  const timeoutId = window.setTimeout(() => controller.abort('REQUEST_TIMEOUT'), timeoutMs)
 
   if (!options.formData) {
     headers.set('Content-Type', 'application/json')
@@ -80,30 +80,27 @@ async function request(path, options = {}) {
   }
 
   let response
+
   try {
     response = await fetch(`${API_BASE}${path}`, {
       method: options.method || 'GET',
       headers,
       cache: 'no-store',
-      signal: controller.signal,
       body: options.formData ? options.body : options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
     })
   } catch (error) {
-    const timedOut = error?.name === 'AbortError'
-      || error?.message === 'REQUEST_TIMEOUT'
-      || error?.code === 'REQUEST_TIMEOUT'
-      || (controller.signal.aborted && controller.signal.reason?.message === 'REQUEST_TIMEOUT')
-
-    if (timedOut) {
-      const timeoutError = new Error('Servidor demorou para responder. Tente novamente em alguns segundos.')
-      timeoutError.status = 408
+    const isAbortError = error?.name === 'AbortError' || error === 'REQUEST_TIMEOUT'
+    if (isAbortError) {
+      const timeoutError = new Error('Tempo limite de conexão excedido. Tente novamente.')
       timeoutError.code = 'REQUEST_TIMEOUT'
+      timeoutError.status = 408
       throw timeoutError
     }
 
-    throw error
+    throw new Error('Não foi possível conectar ao servidor. Tente novamente em instantes.')
   } finally {
-    globalThis.clearTimeout(timeoutId)
+    window.clearTimeout(timeoutId)
   }
 
   const raw = await response.text()

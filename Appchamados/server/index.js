@@ -21,7 +21,7 @@ function getAllowedOrigins() {
     return configuredOrigins
   }
 
-  return ['http://localhost:5173']
+  return ['http://localhost:5173', 'https://*.netlify.app']
 }
 
 const allowedOrigins = getAllowedOrigins()
@@ -54,6 +54,22 @@ function createOriginMatcher(origins) {
 }
 
 const isAllowedOrigin = createOriginMatcher(allowedOrigins)
+
+function isDatabaseUnavailableError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  const code = String(error?.code || '').toUpperCase()
+
+  if (code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ETIMEDOUT') {
+    return true
+  }
+
+  return message.includes('econnrefused')
+    || message.includes('connection terminated')
+    || message.includes('could not connect')
+    || message.includes('timeout')
+    || message.includes('timed out')
+    || message.includes(':5432')
+}
 
 const corsOptions = {
   credentials: true,
@@ -88,7 +104,15 @@ async function initializeApplication() {
     if (error?.message?.includes('Formato inválido')) {
       return res.status(400).json({ message: error.message })
     }
-    return res.status(500).json({ message: error.message || 'Erro interno no servidor.' })
+
+    if (isDatabaseUnavailableError(error)) {
+      return res.status(503).json({
+        code: 'DATABASE_UNAVAILABLE',
+        message: 'Servidor temporariamente indisponível. Tente novamente em instantes.',
+      })
+    }
+
+    return res.status(500).json({ message: 'Erro interno no servidor.' })
   })
 
   app.listen(PORT, () => {

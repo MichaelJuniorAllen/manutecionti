@@ -67,8 +67,8 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
       }
 
       const result = await retry(
-        () => api.tickets.mine({}, { timeoutMs: 20000 }),
-        { attempts: isInitial ? 3 : 2, waitMs: 1200 },
+        () => api.tickets.mine({}, { timeoutMs: isInitial ? 8000 : 6000 }),
+        { attempts: isInitial ? 2 : 1, waitMs: 900 },
       )
       writeTicketsCache({}, result)
       const allTickets = result.tickets || []

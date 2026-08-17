@@ -29,8 +29,8 @@ export function AuthProvider({ children }) {
     }
 
     async function initSession() {
-      const MAX_RETRIES = 3
-      const RETRY_DELAY_MS = 3000
+      const MAX_RETRIES = 2
+      const RETRY_DELAY_MS = 1200
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
