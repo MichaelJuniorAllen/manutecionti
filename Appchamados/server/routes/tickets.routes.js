@@ -310,6 +310,15 @@ function isInvalidStreamTokenError(error) {
     || error?.code === 'AUTH_USER_NOT_FOUND'
 }
 
+function resolveAtendenteFotoPerfil(ticket, db) {
+  if (!ticket?.atendente_id || !db) {
+    return null
+  }
+
+  const atendente = db.usuarios?.find((item) => String(item.id) === String(ticket.atendente_id))
+  return atendente?.foto_perfil || null
+}
+
 function toTicketResponse(ticket, db = null, options = {}) {
   const now = options.nowIso || nowIso()
   const sessionsByTicket = options.sessionsByTicket || null
@@ -351,7 +360,7 @@ function toTicketResponse(ticket, db = null, options = {}) {
     dueAt: ticket.due_at,
     atendenteId: ticket.atendente_id || null,
     atendenteNome: ticket.atendente_nome || null,
-    atendenteFotoPerfil: ticket.atendente_foto_perfil || null,
+    atendenteFotoPerfil: resolveAtendenteFotoPerfil(ticket, db) || ticket.atendente_foto_perfil || null,
     dataAtendimento: ticket.data_atendimento || null,
     sessoes: mappedSessions,
     totalSessoes: mappedSessions.length,
@@ -733,7 +742,8 @@ router.patch('/:id/status', async (req, res) => {
 
         ticket.atendente_id = req.auth.user.id
         ticket.atendente_nome = req.auth.user.nome
-        ticket.atendente_foto_perfil = req.auth.user.foto_perfil || null
+        // Foto não é mais duplicada no chamado (evita inchar o banco); é resolvida por atendente_id ao montar a resposta.
+        ticket.atendente_foto_perfil = null
         ticket.data_atendimento = ticket.data_atendimento || now
         ticket.status = 'Em andamento'
       }
@@ -806,7 +816,7 @@ router.patch('/:id/status', async (req, res) => {
         ticket.data_fechamento = now
         ticket.atendente_id = req.auth.user.id
         ticket.atendente_nome = req.auth.user.nome
-        ticket.atendente_foto_perfil = req.auth.user.foto_perfil || null
+        ticket.atendente_foto_perfil = null
         sessionActionMessage = `${req.auth.user.nome} concluiu o atendimento`
       }
 
