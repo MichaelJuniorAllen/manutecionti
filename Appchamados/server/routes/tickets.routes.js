@@ -360,7 +360,7 @@ function toTicketResponse(ticket, db = null, options = {}) {
     dueAt: ticket.due_at,
     atendenteId: ticket.atendente_id || null,
     atendenteNome: ticket.atendente_nome || null,
-    atendenteFotoPerfil: resolveAtendenteFotoPerfil(ticket, db) || ticket.atendente_foto_perfil || null,
+    atendenteFotoPerfil: resolveAtendenteFotoPerfil(ticket, db),
     dataAtendimento: ticket.data_atendimento || null,
     sessoes: mappedSessions,
     totalSessoes: mappedSessions.length,

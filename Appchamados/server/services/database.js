@@ -131,6 +131,28 @@ async function ensurePostgresDatabase() {
         [STATE_ROW_ID, JSON.stringify(cloneDefaultDatabase())],
       )
 
+      // Remove fotos duplicadas dos chamados antes de carregar o estado inteiro em memoria.
+      await pool.query(`
+        UPDATE app_state
+        SET data = jsonb_set(
+          data,
+          '{chamados}',
+          COALESCE((
+            SELECT jsonb_agg(ticket - 'atendente_foto_perfil')
+            FROM jsonb_array_elements(COALESCE(data->'chamados', '[]'::jsonb)) AS ticket
+          ), '[]'::jsonb),
+          true
+        ),
+        updated_at = NOW()
+        WHERE id = $1
+          AND jsonb_typeof(data->'chamados') = 'array'
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(data->'chamados') AS ticket
+            WHERE ticket ? 'atendente_foto_perfil'
+          )
+      `, [STATE_ROW_ID])
+
       const current = await pool.query('SELECT data FROM app_state WHERE id = $1', [STATE_ROW_ID])
       const data = current.rows[0]?.data || cloneDefaultDatabase()
       const { normalized, shouldPersist } = normalizeDatabaseShape(data)
