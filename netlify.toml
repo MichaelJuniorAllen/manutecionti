@@ -4,7 +4,8 @@ command = "npm ci && npm run build"
 publish = "dist"
 
 [build.environment]
-VITE_API_URL = "https://manutecionti.onrender.com/api"
+# VITE_API_URL agora e definido em Site settings > Environment variables no
+# painel do Netlify (aponta para o backend local via Cloudflare Tunnel).
 
 [[redirects]]
 from = "/*"
