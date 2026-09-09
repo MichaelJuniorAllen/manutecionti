@@ -104,19 +104,39 @@ async function request(path, options = {}) {
   }
 
   const raw = await response.text()
+  const isHtmlBody = /^\s*<(?:!doctype|html)\b/i.test(raw)
   let data = {}
+  let isJson = true
 
   if (raw) {
     try {
-      data = JSON.parse(raw)
+      const parsed = JSON.parse(raw)
+      data = parsed && typeof parsed === 'object' ? parsed : {}
     } catch {
-      data = { rawMessage: raw }
+      isJson = false
     }
   }
 
+  // Um corpo que nao e JSON significa que a requisicao nao chegou na API e quem
+  // respondeu foi o host estatico: com o fallback de SPA (HTTP 200 + index.html)
+  // no GET, ou com a pagina de 404 no POST. Nunca exibir esse corpo ao usuario,
+  // porque ele e um documento HTML inteiro.
+  if (!isJson) {
+    const shortText = !isHtmlBody && raw.trim().length <= 200 ? raw.trim() : ''
+    const error = new Error(
+      shortText
+        || (isHtmlBody
+          ? 'O servidor respondeu com uma pagina web em vez de dados. Verifique se a URL da API esta configurada corretamente.'
+          : `Resposta invalida do servidor (HTTP ${response.status}).`),
+    )
+    error.status = response.status
+    error.code = 'INVALID_RESPONSE'
+    error.detail = raw.slice(0, 300)
+    throw error
+  }
+
   if (!response.ok) {
-    const rawMessage = String(data.rawMessage || '').trim()
-    const defaultMessage = rawMessage || `Erro ao processar requisição (HTTP ${response.status}).`
+    const defaultMessage = `Erro ao processar requisição (HTTP ${response.status}).`
     let friendlyMessage = data.message || defaultMessage
     const errorCode = String(data.code || '').trim()
 
