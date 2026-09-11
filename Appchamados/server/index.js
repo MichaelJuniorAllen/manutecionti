@@ -93,7 +93,12 @@ async function initializeApplication() {
   app.use('/uploads', express.static(path.resolve(process.cwd(), 'public', 'uploads')))
 
   app.get('/api/health', (_, res) => {
-    res.json({ status: 'ok', db: getDatabasePath(), driver: isUsingPostgres() ? 'postgres' : 'json' })
+    res.json({
+      status: 'ok',
+      db: getDatabasePath(),
+      driver: isUsingPostgres() ? 'postgres' : 'json',
+      email: getEmailProviderStatus(),
+    })
   })
 
   app.use('/api/auth', authRoutes)

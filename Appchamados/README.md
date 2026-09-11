@@ -88,6 +88,8 @@ Após deploy, copie a URL pública da API, por exemplo:
 
 `https://seu-backend.onrender.com/api`
 
+Confira `https://seu-backend.onrender.com/api/health`: o campo `email.configured` precisa ser `true`. Para Resend, configure `RESEND_API_KEY` e `RESEND_FROM_ADDRESS` usando um remetente de domínio verificado.
+
 ### 2. Configurar Netlify
 
 No projeto Netlify:
