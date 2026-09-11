@@ -47,9 +47,9 @@ O sistema já está preparado para envio real do código de confirmação por SM
 
 1. Copie `.env.example` para `.env`.
 2. Preencha as variáveis SMTP ou `RESEND_API_KEY`/`RESEND_FROM_ADDRESS`.
-3. Reinicie o `npm start`.
+3. Reinicie o `npm start` e confirme no log `Provedor de e-mail: resend`, `smtp` ou `sendgrid`.
 
-Se Resend estiver configurado, ele passa a ser o provedor principal de e-mail. Sem SMTP/Resend, o sistema entra em modo fallback local e registra o código no log do servidor para testes.
+Se Resend estiver configurado, ele passa a ser o provedor principal de e-mail. Em produção, sem SMTP/Resend/SendGrid configurado, a API informa erro em vez de confirmar um envio inexistente. Para testes locais, defina `EMAIL_FALLBACK_ENABLED=true` para registrar o código no log do servidor.
 
 ### Gerenciar domínio do Resend
 

@@ -3,7 +3,7 @@ import multer from 'multer'
 import { comparePassword, createToken, hashPassword, normalizeUserRole, sanitizeUser } from '../services/auth.js'
 import { mutateDatabase, nextNumericId, nowIso, readDatabase } from '../services/database.js'
 import { requireAuth } from '../middleware/auth.js'
-import { sendRegistrationVerificationCode } from '../services/mailer.js'
+import { sendPasswordChangeCode, sendRegistrationVerificationCode } from '../services/mailer.js'
 
 const router = express.Router()
 
@@ -186,7 +186,7 @@ router.post('/register', upload.single('foto'), async (req, res) => {
       mutableDb.usuarios.push(createdUser)
     })
 
-    const sendResult = await sendRegistrationVerificationCode({
+    await sendRegistrationVerificationCode({
       to: email,
       userName: nome,
       code: verificationCode,
@@ -290,7 +290,7 @@ router.post('/resend-registration-email', async (req, res) => {
       }
     })
 
-    const sendResult = await sendRegistrationVerificationCode({
+    await sendRegistrationVerificationCode({
       to: email,
       userName,
       code: verificationCode,
@@ -379,7 +379,7 @@ router.post('/forgot-password', async (req, res) => {
       }
     })
 
-    const sendResult = await sendRegistrationVerificationCode({
+    await sendPasswordChangeCode({
       to: email,
       userName,
       code,

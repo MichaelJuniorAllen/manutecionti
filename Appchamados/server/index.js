@@ -7,6 +7,7 @@ import profileRoutes from './routes/profile.routes.js'
 import settingsRoutes from './routes/settings.routes.js'
 import ticketsRoutes from './routes/tickets.routes.js'
 import { ensureDatabase, getDatabasePath, isUsingPostgres } from './services/database.js'
+import { getEmailProviderStatus } from './services/mailer.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 4000)
@@ -116,9 +117,11 @@ async function initializeApplication() {
   })
 
   app.listen(PORT, () => {
+    const emailStatus = getEmailProviderStatus()
     console.log(`Servidor iniciado na porta ${PORT}`)
     console.log(`Banco pronto em ${getDatabasePath()}`)
     console.log(`Driver de persistencia: ${isUsingPostgres() ? 'PostgreSQL' : 'JSON local'}`)
+    console.log(`Provedor de e-mail: ${emailStatus.provider} (${emailStatus.configured ? 'configurado' : 'nao configurado'})`)
     console.log(`CORS liberado para: ${allowedOrigins.join(', ')}`)
   })
 }

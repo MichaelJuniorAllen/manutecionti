@@ -7,9 +7,10 @@ const smtpUser = process.env.SMTP_USER
 const smtpPass = process.env.SMTP_PASS
 const smtpFrom = process.env.SMTP_FROM || smtpUser || 'no-reply@appchamados.local'
 const resendApiKey = process.env.RESEND_API_KEY || ''
-const resendFromAddress = String(process.env.RESEND_FROM_ADDRESS || '').trim()
 const emailServiceApiKey = process.env.EMAIL_SERVICE_API_KEY || ''
 const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpFrom
+const resendFromAddress = String(process.env.RESEND_FROM_ADDRESS || emailFromAddress).trim()
+const emailFallbackEnabled = String(process.env.EMAIL_FALLBACK_ENABLED || '').trim().toLowerCase() === 'true'
 
 const smtpConfigured = Boolean(smtpHost && smtpPort && smtpUser && smtpPass)
 const resendConfigured = Boolean(resendApiKey && resendFromAddress)
@@ -99,9 +100,13 @@ async function sendVerificationEmail({ to, subject, text, html, fallbackLabel, c
     throw new Error('Dados insuficientes para enviar e-mail de confirmação.')
   }
 
-  if (!resendConfigured && !apiEmailConfigured && !smtpConfigured) {
+  if (!resendConfigured && !apiEmailConfigured && !smtpConfigured && emailFallbackEnabled) {
     console.log(`[SMTP-FALLBACK] ${fallbackLabel} para ${to}: ${code}`)
     return { mode: 'fallback' }
+  }
+
+  if (!resendConfigured && !apiEmailConfigured && !smtpConfigured) {
+    throw new Error('Nenhum provedor de e-mail configurado. Configure SMTP, Resend ou SendGrid no ambiente do servidor.')
   }
 
   if (resendConfigured) {
