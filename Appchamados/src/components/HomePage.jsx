@@ -10,7 +10,7 @@ function HomePage({ onNavigate }) {
         <article className="home-card card-new" onClick={() => onNavigate('/novo-chamado')}>
           <div className="card-icon">📝</div>
           <h3>Novo Chamado</h3>
-          <p>Registre uma nova solicitação de manutenção e TI</p>
+          <p>Registre uma nova solicitação de manutenção, TI ou Engenharia Clínica</p>
           <button type="button" className="card-button">Cadastrar</button>
         </article>
 
