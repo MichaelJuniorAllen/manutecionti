@@ -68,9 +68,9 @@ Depois de criar o domínio, use o `id` retornado para consultar ou verificar:
 POST /api/settings/resend-domains/:id/verify
 ```
 
-## Deploy estável (Netlify + Backend externo)
+## Deploy estável (Cloudflare Pages + Backend externo)
 
-Para funcionar sem erro em produção, publique o frontend no Netlify e o backend em um serviço Node (Render, Railway, Fly.io, VPS etc).
+Para funcionar sem erro em produção, publique o frontend no Cloudflare Pages e o backend em um serviço Node (Render, Railway, Fly.io, VPS etc).
 
 ### 1. Publicar backend
 
@@ -79,7 +79,7 @@ No serviço do backend, configure as variáveis:
 - `PORT=4000` (ou a porta do provedor)
 - `JWT_SECRET=seu_segredo_forte`
 - `JWT_EXPIRES_IN=8h`
-- `CORS_ORIGINS=https://SEU-SITE.netlify.app,https://*.netlify.app`
+- `CORS_ORIGINS=https://SEU-SITE.pages.dev,https://SEU-DOMINIO.com`
 - `DATABASE_URL=postgresql://USER:PASS@HOST:5432/DBNAME`
 - `PGSSL=true`
 - SMTP (opcional): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
@@ -90,26 +90,23 @@ Após deploy, copie a URL pública da API, por exemplo:
 
 Confira `https://seu-backend.onrender.com/api/health`: o campo `email.configured` precisa ser `true`. Para Resend, configure `RESEND_API_KEY` e `RESEND_FROM_ADDRESS` usando um remetente de domínio verificado.
 
-### 2. Configurar Netlify
+### 2. Configurar Cloudflare Pages
 
-No projeto Netlify:
+No projeto Cloudflare Pages:
 
 - Build command: `npm run build`
 - Publish directory: `dist`
-- Environment variable:
-	- `VITE_API_URL=https://seu-backend.onrender.com/api`
+- A variável `VITE_API_URL` já está definida em `.env.production` para `https://api.upacentral.co.uk/api`.
+  Altere-a caso a API esteja em outro endereço e faça um novo deploy.
 
-Este repositório já inclui fallback de SPA:
-
-- `netlify.toml`
-- `public/_redirects`
+Adicione uma regra de SPA no Cloudflare Pages para devolver `index.html` em rotas sem ficheiro.
 
 ### 3. Validar após publicar
 
-1. Abra o site publicado no Netlify.
+1. Abra o site publicado no Cloudflare Pages.
 2. Crie um chamado como visitante.
 3. Faça login e abra “Meu Histórico”.
-4. Verifique no backend se CORS aceita seu domínio Netlify.
+4. Verifique no backend se `CORS_ORIGINS` aceita o domínio Cloudflare Pages e o domínio personalizado, quando existir.
 5. Verifique `GET /api/health` e confirme `driver: "postgres"`.
 
 Se o frontend carregar e as chamadas de API responderem 200/401/403 corretamente (sem erro de CORS), o deploy está estável.

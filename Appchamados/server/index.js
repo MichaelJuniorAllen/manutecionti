@@ -22,7 +22,7 @@ function getAllowedOrigins() {
     return configuredOrigins
   }
 
-  return ['http://localhost:5173', 'https://*.netlify.app']
+  return ['http://localhost:5173', 'https://*.netlify.app', 'https://*.pages.dev']
 }
 
 const allowedOrigins = getAllowedOrigins()
