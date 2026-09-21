@@ -581,6 +581,72 @@ textarea {
   font-family: inherit;
 }
 
+.priority-help {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--green);
+  background: rgba(38, 115, 77, 0.07);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.priority-help strong {
+  color: var(--text);
+}
+
+.priority-help-critica {
+  border-left-color: #b42318;
+  background: rgba(180, 35, 24, 0.07);
+}
+
+.priority-help-alta {
+  border-left-color: #c76a00;
+  background: rgba(199, 106, 0, 0.08);
+}
+
+.priority-guide {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafcf9;
+}
+
+.priority-guide-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.priority-guide-list {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.priority-guide-item {
+  display: grid;
+  gap: 3px;
+  padding-left: 9px;
+  border-left: 3px solid var(--green);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.priority-guide-item strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.priority-guide-critica { border-left-color: #b42318; }
+.priority-guide-alta { border-left-color: #c76a00; }
+.priority-guide-media { border-left-color: var(--green); }
+.priority-guide-baixa { border-left-color: #59738a; }
+
 .form-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1202,6 +1268,10 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .priority-guide-list {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .ticket-header {
     flex-direction: column;
     align-items: flex-start;
@@ -1234,6 +1304,10 @@ textarea {
   .filters,
   .tickets-filters,
   .ticket {
+    grid-template-columns: 1fr;
+  }
+
+  .priority-guide-list {
     grid-template-columns: 1fr;
   }
 

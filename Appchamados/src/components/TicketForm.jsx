@@ -43,6 +43,8 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
     setFormValues((current) => ({ ...current, [name]: value }))
   }
 
+  const selectedPriority = PRIORITY_OPTIONS.find((option) => option.value === formValues.priority)
+
   async function handleSubmit(event) {
     event.preventDefault()
     if (submitLockRef.current) return
@@ -164,6 +166,11 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
                     </option>
                   ))}
                 </select>
+                {selectedPriority && (
+                  <p className={`priority-help priority-help-${selectedPriority.value}`}>
+                    <strong>Quando escolher:</strong> {selectedPriority.description}
+                  </p>
+                )}
               </div>
               <div className="field">
                 <label htmlFor="responsible">Responsável</label>
@@ -179,6 +186,17 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
                     <option key={option} value={option}>{option}</option>
                   ))}
                 </select>
+              </div>
+            </div>
+            <div className="priority-guide" aria-label="Guia de prioridades">
+              <p className="priority-guide-title">Escolha pelo impacto no trabalho</p>
+              <div className="priority-guide-list">
+                {PRIORITY_OPTIONS.map((option) => (
+                  <span key={option.value} className={`priority-guide-item priority-guide-${option.value}`}>
+                    <strong>{option.label}</strong>
+                    <span>{option.value === 'critica' ? 'Atividade essencial parada ou risco' : option.value === 'alta' ? 'Trabalho parado, sem alternativa' : option.value === 'media' ? 'Atrapalha, mas há alternativa' : 'Pode aguardar'}</span>
+                  </span>
+                ))}
               </div>
             </div>
           </div>

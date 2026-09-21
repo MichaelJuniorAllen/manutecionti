@@ -1,8 +1,24 @@
 export const PRIORITY_OPTIONS = [
-  { value: 'media', label: 'Média - 3h' },
-  { value: 'critica', label: 'Crítica - 20min' },
-  { value: 'alta', label: 'Alta - 1h' },
-  { value: 'baixa', label: 'Baixa - 1 dia' },
+  {
+    value: 'media',
+    label: 'Média - 3h',
+    description: 'O problema atrapalha o trabalho, mas ainda existe uma alternativa temporária. Atendimento em até 3 horas.',
+  },
+  {
+    value: 'critica',
+    label: 'Crítica - 20min',
+    description: 'O problema parou uma atividade essencial ou oferece risco. Atendimento em até 20 minutos.',
+  },
+  {
+    value: 'alta',
+    label: 'Alta - 1h',
+    description: 'O problema impede o trabalho e não há alternativa viável. Atendimento em até 1 hora.',
+  },
+  {
+    value: 'baixa',
+    label: 'Baixa - 1 dia',
+    description: 'O problema tem pouco impacto ou pode aguardar. Atendimento em até 1 dia útil.',
+  },
 ]
 
 const PRIORITY_SLA_MINUTES = {
