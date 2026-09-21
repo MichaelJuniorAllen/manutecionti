@@ -1,7 +1,11 @@
 import { useRef, useState } from 'react'
 import { PRIORITY_OPTIONS } from '../utils/tickets'
 
-const RESPONSIBLE_OPTIONS = ['TI', 'Manutenção', 'Engenharia Clínica']
+const RESPONSIBLE_OPTIONS = [
+  { value: 'TI', description: 'Computadores, sistemas, acessos e problemas de tecnologia.' },
+  { value: 'Manutenção', description: 'Estrutura, elétrica, hidráulica e manutenção geral.' },
+  { value: 'Engenharia Clínica', description: 'Equipamentos médico-hospitalares e clínicos.' },
+]
 
 const ALLOWED_TICKET_EMAILS = [
   'scihupacentral@maoamigacaxias.org.br',
@@ -36,6 +40,7 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [priorityOpen, setPriorityOpen] = useState(false)
+  const [responsibleOpen, setResponsibleOpen] = useState(false)
   const submitLockRef = useRef(false)
   const submitRequestIdRef = useRef('')
 
@@ -49,10 +54,21 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
     setPriorityOpen(false)
   }
 
+  function handleResponsibleChange(value) {
+    setFormValues((current) => ({ ...current, responsible: value }))
+    setResponsibleOpen(false)
+  }
+
   const selectedPriority = PRIORITY_OPTIONS.find((option) => option.value === formValues.priority)
+  const selectedResponsible = RESPONSIBLE_OPTIONS.find((option) => option.value === formValues.responsible)
 
   async function handleSubmit(event) {
     event.preventDefault()
+    const requiredValues = [formValues.title, formValues.description, formValues.area, formValues.requester, formValues.priority, formValues.responsible]
+    if (requiredValues.some((value) => !String(value).trim())) {
+      setMessage('Preencha todos os campos obrigatórios antes de registrar o chamado.')
+      return
+    }
     if (submitLockRef.current) return
     submitLockRef.current = true
     setLoading(true)
@@ -193,19 +209,40 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
                 </div>
               </div>
               <div className="field">
-                <label htmlFor="responsible">Responsável</label>
-                <select
-                  id="responsible"
-                  name="responsible"
-                  value={formValues.responsible}
-                  onChange={handleChange}
-                  className="form-input"
-                >
-                  <option value="">Selecione</option>
-                  {RESPONSIBLE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
+                <label htmlFor="responsible">Responsável *</label>
+                <div className="responsible-picker">
+                  <button
+                    id="responsible"
+                    type="button"
+                    className={`responsible-picker-button responsible-picker-${selectedResponsible ? 'selected' : 'empty'}`}
+                    aria-haspopup="listbox"
+                    aria-expanded={responsibleOpen}
+                    onClick={() => setResponsibleOpen((open) => !open)}
+                  >
+                    <span>
+                      <strong>{selectedResponsible?.value || 'Selecione'}</strong>
+                      <small>{selectedResponsible?.description || 'Escolha a equipe responsável pelo atendimento.'}</small>
+                    </span>
+                    <span className="priority-picker-arrow" aria-hidden="true">▾</span>
+                  </button>
+                  {responsibleOpen && (
+                    <div className="responsible-picker-options" role="listbox" aria-label="Escolha o responsável">
+                      {RESPONSIBLE_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="option"
+                          aria-selected={option.value === formValues.responsible}
+                          className="responsible-picker-option"
+                          onClick={() => handleResponsibleChange(option.value)}
+                        >
+                          <strong>{option.value}</strong>
+                          <small>{option.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
