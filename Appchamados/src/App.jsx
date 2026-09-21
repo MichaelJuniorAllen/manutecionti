@@ -12,12 +12,14 @@ import { formatPriority, getFullName } from './pages/pageHelpers'
 
 const loadNewTicketPage = () => import('./pages/NewTicketPage')
 const loadHistoryPage = () => import('./pages/HistoryPage')
+const loadWaitingTicketsPage = () => import('./pages/WaitingTicketsPage')
 const loadProfilePage = () => import('./pages/ProfilePage')
 const loadMyHistoryPage = () => import('./pages/MyHistoryPage')
 const loadSettingsPage = () => import('./pages/SettingsPage')
 
 const NewTicketPage = lazy(loadNewTicketPage)
 const HistoryPage = lazy(loadHistoryPage)
+const WaitingTicketsPage = lazy(loadWaitingTicketsPage)
 const ProfilePage = lazy(loadProfilePage)
 const MyHistoryPage = lazy(loadMyHistoryPage)
 const SettingsPage = lazy(loadSettingsPage)
@@ -120,6 +122,10 @@ function App() {
         title: 'Chamados',
         subtitle: 'Acompanhe e atualize solicitações abertas pela sua conta.',
       },
+      '/chamados-em-espera': {
+        title: 'Chamados em Espera',
+        subtitle: 'Chamados pausados aguardando continuação do atendimento.',
+      },
       '/perfil': {
         title: 'Meu Perfil',
         subtitle: 'Gerencie dados pessoais, foto e segurança da sua conta.',
@@ -185,6 +191,13 @@ function App() {
         void Promise.all([
           loadHistoryPage(),
           import('./components/Stats'),
+          import('./components/TicketList'),
+        ])
+        return
+      }
+      case '/chamados-em-espera': {
+        void Promise.all([
+          loadWaitingTicketsPage(),
           import('./components/TicketList'),
         ])
         return
@@ -415,6 +428,20 @@ function App() {
             <ProtectedRoute>
               <Suspense fallback={routeFallback}>
                 <HistoryPage
+                  onNotify={notify}
+                  currentUserId={user?.id || ''}
+                  currentUserName={getFullName(user)}
+                />
+              </Suspense>
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/chamados-em-espera"
+          element={(
+            <ProtectedRoute>
+              <Suspense fallback={routeFallback}>
+                <WaitingTicketsPage
                   onNotify={notify}
                   currentUserId={user?.id || ''}
                   currentUserName={getFullName(user)}

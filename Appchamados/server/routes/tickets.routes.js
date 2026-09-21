@@ -613,7 +613,11 @@ router.get('/my', async (req, res) => {
         if (hasMonth && openedAt.getMonth() + 1 !== monthNumber) return false
         if (hasYear && openedAt.getFullYear() !== yearNumber) return false
 
-        if (status && status !== 'todos' && item.status !== status) return false
+        if (status && status !== 'todos') {
+          // Aceita lista separada por virgula (ex.: "Aberto,Em andamento") para filtrar por varios status de uma vez.
+          const allowedStatuses = String(status).split(',').map((value) => value.trim()).filter(Boolean)
+          if (allowedStatuses.length && !allowedStatuses.includes(item.status)) return false
+        }
         if (priority && priority !== 'todos' && item.prioridade !== priority) return false
         if (area && area !== 'todos' && normalize(item.area) !== normalize(area)) return false
         if (responsible && responsible !== 'todos' && normalize(item.tecnico_responsavel) !== normalize(responsible)) return false

@@ -55,6 +55,14 @@ function ProfileMenu({ user, open, onToggle, onClose, onRouteIntent, onLogout })
               Chamados
             </Link>
             <Link
+              to="/chamados-em-espera"
+              onMouseEnter={() => triggerRouteIntent('/chamados-em-espera')}
+              onFocus={() => triggerRouteIntent('/chamados-em-espera')}
+              onClick={onClose}
+            >
+              Chamados em Espera
+            </Link>
+            <Link
               to="/meu-historico"
               onMouseEnter={() => triggerRouteIntent('/meu-historico')}
               onFocus={() => triggerRouteIntent('/meu-historico')}

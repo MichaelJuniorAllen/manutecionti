@@ -11,7 +11,23 @@ const PAUSE_REASON_OPTIONS = [
   'Outro',
 ]
 
-function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentUserName = '' }) {
+const DEFAULT_STATUS_OPTIONS = [
+  { value: 'todos', label: 'Todos os status' },
+  { value: 'Aberto', label: 'Aberto' },
+  { value: 'Em andamento', label: 'Em andamento' },
+  { value: 'Aguardando Continuação', label: 'Aguardando Continuação' },
+  { value: 'Concluído', label: 'Concluído' },
+]
+
+function TicketList({
+  tickets = [],
+  onUpdateStatus,
+  currentUserId = '',
+  currentUserName = '',
+  statusOptions = DEFAULT_STATUS_OPTIONS,
+  hideStatusFilter = false,
+  emptyMessage = 'Nenhum chamado encontrado com os filtros atuais.',
+}) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [priorityFilter, setPriorityFilter] = useState('todos')
@@ -229,18 +245,18 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
-        <select
-          id="statusFilter"
-          className="filter-select"
-          value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value)}
-        >
-          <option value="todos">Todos os status</option>
-          <option value="Aberto">Aberto</option>
-          <option value="Em andamento">Em andamento</option>
-          <option value="Aguardando Continuação">Aguardando Continuação</option>
-          <option value="Concluído">Concluído</option>
-        </select>
+        {hideStatusFilter ? null : (
+          <select
+            id="statusFilter"
+            className="filter-select"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            {statusOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        )}
         <select
           id="priorityFilter"
           className="filter-select"
@@ -269,7 +285,7 @@ function TicketList({ tickets = [], onUpdateStatus, currentUserId = '', currentU
       <div className="tickets-grid">
         {!filteredTickets.length ? (
           <div className="empty-state">
-            <p>📭 Nenhum chamado encontrado.</p>
+            <p>📭 {emptyMessage}</p>
           </div>
         ) : (
           filteredTickets.map((ticket) => {

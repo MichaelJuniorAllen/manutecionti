@@ -2,44 +2,11 @@ import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { api } from '../services/api'
 import { readTicketsCache, writeTicketsCache } from './pageHelpers'
 
-const Stats = lazy(() => import('../components/Stats'))
 const TicketList = lazy(() => import('../components/TicketList'))
 
-// So os status ativos aparecem na grade de cards: chamados em espera (Aguardando Continuação) tem aba propria.
-const ACTIVE_STATUS_OPTIONS = [
-  { value: 'todos', label: 'Todos os status' },
-  { value: 'Aberto', label: 'Aberto' },
-  { value: 'Em andamento', label: 'Em andamento' },
-]
-
-function getOpenAndInProgress(items) {
-  return (items || []).filter((ticket) => ticket.status !== 'Concluído' && ticket.status !== 'Aguardando Continuação')
-}
-
-function isSameLocalDay(dateValue) {
-  if (!dateValue) return false
-  const date = new Date(dateValue)
-  if (Number.isNaN(date.getTime())) return false
-  const now = new Date()
-  return (
-    date.getFullYear() === now.getFullYear()
-    && date.getMonth() === now.getMonth()
-    && date.getDate() === now.getDate()
-  )
-}
-
-function isTicketFromCurrentDay(ticket) {
-  if (!ticket) return false
-
-  let referenceDate = ticket.dataAbertura
-  if (ticket.status === 'Concluído') {
-    referenceDate = ticket.dataFechamento || ticket.dataAtendimento || ticket.dataAbertura
-  } else if (ticket.status === 'Em andamento') {
-    referenceDate = ticket.dataAtendimento || ticket.dataAbertura
-  }
-
-  return isSameLocalDay(referenceDate)
-}
+// Filtro fixo: esta aba so busca chamados pausados, o que reduz o volume de dados
+// trafegados e o trabalho de renderizacao em relacao a lista completa de "Chamados".
+const WAITING_STATUS = 'Aguardando Continuação'
 
 async function retry(action, { attempts = 3, waitMs = 1200 } = {}) {
   let lastError
@@ -59,11 +26,9 @@ async function retry(action, { attempts = 3, waitMs = 1200 } = {}) {
   throw lastError
 }
 
-function HistoryPage({ onNotify, currentUserId, currentUserName }) {
-  const cachedInitialTickets = readTicketsCache()
-  const initialTickets = cachedInitialTickets?.tickets || []
-  const [tickets, setTickets] = useState(() => getOpenAndInProgress(initialTickets))
-  const [todayTickets, setTodayTickets] = useState(() => initialTickets.filter((ticket) => isTicketFromCurrentDay(ticket)))
+function WaitingTicketsPage({ onNotify, currentUserId, currentUserName }) {
+  const cachedInitialTickets = readTicketsCache({ status: WAITING_STATUS })
+  const [tickets, setTickets] = useState(() => cachedInitialTickets?.tickets || [])
   const [loading, setLoading] = useState(() => !cachedInitialTickets)
   const [connectError, setConnectError] = useState(null)
 
@@ -74,13 +39,11 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
       }
 
       const result = await retry(
-        () => api.tickets.mine({}, { timeoutMs: isInitial ? 8000 : 6000 }),
+        () => api.tickets.mine({ status: WAITING_STATUS }, { timeoutMs: isInitial ? 8000 : 6000 }),
         { attempts: isInitial ? 2 : 1, waitMs: 900 },
       )
-      writeTicketsCache({}, result)
-      const allTickets = result.tickets || []
-      setTickets(getOpenAndInProgress(allTickets))
-      setTodayTickets(allTickets.filter((ticket) => isTicketFromCurrentDay(ticket)))
+      writeTicketsCache({ status: WAITING_STATUS }, result)
+      setTickets(result.tickets || [])
       setConnectError(null)
     } catch (error) {
       if (isInitial) {
@@ -154,14 +117,14 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         const payload = { status, ...extras }
+        // Retomar/concluir aqui segue o mesmo fluxo de status do backend, entao o
+        // historico do usuario e atualizado normalmente, como nas outras abas.
         await api.tickets.updateStatus(ticketId, payload, { timeoutMs: 15000 })
 
         if (status === 'Concluído') {
           onNotify('success', 'Chamado concluído e enviado para o seu histórico.')
-        } else if (status === 'Aguardando Continuação') {
-          onNotify('success', 'Atendimento pausado. Chamado disponível para continuação.')
         } else if (status === 'Em andamento') {
-          onNotify('success', 'Atendimento iniciado com sucesso.')
+          onNotify('success', 'Atendimento retomado com sucesso.')
         } else {
           onNotify('success', 'Status atualizado com sucesso.')
         }
@@ -183,7 +146,7 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
   }
 
   if (loading) {
-    return <div className="loading-block">Carregando chamados...</div>
+    return <div className="loading-block">Carregando chamados em espera...</div>
   }
 
   return (
@@ -191,21 +154,18 @@ function HistoryPage({ onNotify, currentUserId, currentUserName }) {
       {connectError ? (
         <div className="toast-message warning">{connectError}</div>
       ) : null}
-      <Suspense fallback={<div className="loading-block">Carregando indicadores...</div>}>
-        <Stats tickets={todayTickets} currentUserId={currentUserId} />
-      </Suspense>
       <Suspense fallback={<div className="loading-block">Carregando lista de chamados...</div>}>
         <TicketList
           tickets={tickets}
           onUpdateStatus={handleUpdateStatus}
           currentUserId={currentUserId}
           currentUserName={currentUserName}
-          statusOptions={ACTIVE_STATUS_OPTIONS}
-          emptyMessage="Nenhum chamado ativo encontrado."
+          hideStatusFilter
+          emptyMessage="Nenhum chamado em espera no momento."
         />
       </Suspense>
     </>
   )
 }
 
-export default HistoryPage
+export default WaitingTicketsPage
