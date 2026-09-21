@@ -592,6 +592,8 @@ router.get('/my', async (req, res) => {
       search,
       lastAction,
       pauseReason,
+      limit,
+      offset,
     } = req.query
 
     const filtered = db.chamados
@@ -636,8 +638,20 @@ router.get('/my', async (req, res) => {
         return true
       })
 
+    // limit/offset sao opcionais e retrocompativeis: sem eles, retorna tudo como antes.
+    // Isso evita montar sessoes/tempos (trabalho pesado por chamado) para itens que a tela nem exibe.
+    const total = filtered.length
+    const offsetNumber = Number(offset)
+    const limitNumber = Number(limit)
+    const hasOffset = Number.isFinite(offsetNumber) && offsetNumber > 0
+    const hasLimit = Number.isFinite(limitNumber) && limitNumber > 0
+    const page = hasOffset || hasLimit
+      ? filtered.slice(hasOffset ? offsetNumber : 0, hasLimit ? (hasOffset ? offsetNumber : 0) + limitNumber : undefined)
+      : filtered
+
     return res.json({
-      tickets: filtered.map((ticket) => toTicketResponse(ticket, db, { sessionsByTicket, nowIso: currentNowIso })),
+      tickets: page.map((ticket) => toTicketResponse(ticket, db, { sessionsByTicket, nowIso: currentNowIso })),
+      total,
     })
   } catch (error) {
     if (isTransientDbError(error)) {

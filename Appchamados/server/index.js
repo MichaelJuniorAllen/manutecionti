@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import compression from 'compression'
 import cors from 'cors'
 import express from 'express'
 import path from 'node:path'
@@ -88,6 +89,8 @@ async function initializeApplication() {
   await ensureDatabase()
 
   app.use(cors(corsOptions))
+  // Comprime as respostas JSON (historico/chamados) antes de enviar pelo tunnel, reduzindo o tempo de transferencia.
+  app.use(compression())
   app.use(express.json({ limit: '3mb' }))
   app.use(express.urlencoded({ extended: true }))
   app.use('/uploads', express.static(path.resolve(process.cwd(), 'public', 'uploads')))
@@ -121,7 +124,7 @@ async function initializeApplication() {
     return res.status(500).json({ message: 'Erro interno no servidor.' })
   })
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     const emailStatus = getEmailProviderStatus()
     console.log(`Servidor iniciado na porta ${PORT}`)
     console.log(`Banco pronto em ${getDatabasePath()}`)
@@ -129,6 +132,10 @@ async function initializeApplication() {
     console.log(`Provedor de e-mail: ${emailStatus.provider} (${emailStatus.configured ? 'configurado' : 'nao configurado'})`)
     console.log(`CORS liberado para: ${allowedOrigins.join(', ')}`)
   })
+
+  // Mantem conexoes HTTP abertas por mais tempo para evitar handshakes repetidos via tunnel/Netlify.
+  server.keepAliveTimeout = 65000
+  server.headersTimeout = 66000
 }
 
 initializeApplication().catch((error) => {
