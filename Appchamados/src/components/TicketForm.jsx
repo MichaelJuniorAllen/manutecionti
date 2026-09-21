@@ -35,12 +35,18 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
   })
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const [priorityOpen, setPriorityOpen] = useState(false)
   const submitLockRef = useRef(false)
   const submitRequestIdRef = useRef('')
 
   function handleChange(event) {
     const { name, value } = event.target
     setFormValues((current) => ({ ...current, [name]: value }))
+  }
+
+  function handlePriorityChange(value) {
+    setFormValues((current) => ({ ...current, priority: value }))
+    setPriorityOpen(false)
   }
 
   const selectedPriority = PRIORITY_OPTIONS.find((option) => option.value === formValues.priority)
@@ -152,25 +158,39 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
             <div className="row">
               <div className="field">
                 <label htmlFor="priority">Prioridade *</label>
-                <select
-                  id="priority"
-                  name="priority"
-                  required
-                  value={formValues.priority}
-                  onChange={handleChange}
-                  className="form-input"
-                >
-                  {PRIORITY_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                {selectedPriority && (
-                  <p className={`priority-help priority-help-${selectedPriority.value}`}>
-                    <strong>Quando escolher:</strong> {selectedPriority.description}
-                  </p>
-                )}
+                <div className="priority-picker">
+                  <button
+                    id="priority"
+                    type="button"
+                    className={`priority-picker-button priority-picker-${selectedPriority?.value || 'media'}`}
+                    aria-haspopup="listbox"
+                    aria-expanded={priorityOpen}
+                    onClick={() => setPriorityOpen((open) => !open)}
+                  >
+                    <span>
+                      <strong>{selectedPriority?.label}</strong>
+                      <small>{selectedPriority?.description}</small>
+                    </span>
+                    <span className="priority-picker-arrow" aria-hidden="true">▾</span>
+                  </button>
+                  {priorityOpen && (
+                    <div className="priority-picker-options" role="listbox" aria-label="Escolha a prioridade">
+                      {PRIORITY_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="option"
+                          aria-selected={option.value === formValues.priority}
+                          className={`priority-picker-option priority-picker-${option.value}`}
+                          onClick={() => handlePriorityChange(option.value)}
+                        >
+                          <strong>{option.label}</strong>
+                          <small>{option.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="field">
                 <label htmlFor="responsible">Responsável</label>
@@ -186,17 +206,6 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
                     <option key={option} value={option}>{option}</option>
                   ))}
                 </select>
-              </div>
-            </div>
-            <div className="priority-guide" aria-label="Guia de prioridades">
-              <p className="priority-guide-title">Escolha pelo impacto no trabalho</p>
-              <div className="priority-guide-list">
-                {PRIORITY_OPTIONS.map((option) => (
-                  <span key={option.value} className={`priority-guide-item priority-guide-${option.value}`}>
-                    <strong>{option.label}</strong>
-                    <span>{option.value === 'critica' ? 'Atividade essencial parada ou risco' : option.value === 'alta' ? 'Trabalho parado, sem alternativa' : option.value === 'media' ? 'Atrapalha, mas há alternativa' : 'Pode aguardar'}</span>
-                  </span>
-                ))}
               </div>
             </div>
           </div>
