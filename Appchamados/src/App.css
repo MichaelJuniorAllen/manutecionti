@@ -81,6 +81,11 @@ header {
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 20px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--bg);
+  padding: 14px 0;
 }
 
 h1 {
@@ -1346,6 +1351,15 @@ textarea {
 
 .ticket-modal p {
   margin: 0;
+}
+
+.pause-warning {
+  background: #fdf3e2;
+  border: 1px solid #eecf9a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--amber);
+  font-size: 13px;
 }
 
 .ticket-modal-form {

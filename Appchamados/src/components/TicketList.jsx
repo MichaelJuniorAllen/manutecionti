@@ -458,6 +458,9 @@ function TicketList({
           <div className="ticket-modal">
             <h3>Pausar atendimento</h3>
             <p>Registre o motivo e a observação da pausa para manter o histórico completo.</p>
+            <p className="pause-warning">
+              ⚠️ Ao salvar, este chamado sai da aba <strong>Chamados</strong> e passa para a aba <strong>Chamados em Espera</strong>, até que alguém retome o atendimento.
+            </p>
             <form onSubmit={handlePauseSubmit} className="ticket-modal-form">
               <div className="field">
                 <label htmlFor="pause-reason">Motivo</label>
