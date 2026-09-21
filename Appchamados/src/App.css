@@ -504,7 +504,7 @@ textarea {
   border: 2px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .form-header {
@@ -636,12 +636,14 @@ textarea {
   top: calc(100% + 4px);
   left: 0;
   right: 0;
+  max-height: min(360px, calc(100vh - 32px));
   display: grid;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #fff;
   box-shadow: 0 8px 20px rgba(25, 45, 32, 0.14);
+  overflow-y: auto;
 }
 
 .priority-picker-option {
