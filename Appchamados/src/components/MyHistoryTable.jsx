@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+
+const PAGE_SIZE = 25
 
 function formatDate(value) {
   if (!value) return '--'
@@ -68,8 +70,21 @@ function formatSessionsCount(count) {
 }
 
 function MyHistoryTable({ tickets, currentUserId = '' }) {
-  const rows = useMemo(() => tickets || [], [tickets])
+  const allRows = useMemo(() => tickets || [], [tickets])
   const [expandedRows, setExpandedRows] = useState(() => new Set())
+  const [page, setPage] = useState(1)
+
+  // Renderiza so a pagina atual: centenas de linhas de uma vez deixavam a tela travada.
+  useEffect(() => {
+    setPage(1)
+  }, [allRows])
+
+  const totalPages = Math.max(1, Math.ceil(allRows.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const rows = useMemo(
+    () => allRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [allRows, safePage],
+  )
 
   function toggleRow(ticketId) {
     setExpandedRows((current) => {
@@ -182,6 +197,27 @@ function MyHistoryTable({ tickets, currentUserId = '' }) {
           </tbody>
         </table>
       </div>
+      {allRows.length > PAGE_SIZE ? (
+        <div className="history-pagination">
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={safePage <= 1}
+          >
+            Anterior
+          </button>
+          <span>
+            Página {safePage} de {totalPages} • {allRows.length} chamados
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={safePage >= totalPages}
+          >
+            Próxima
+          </button>
+        </div>
+      ) : null}
     </section>
   )
 }

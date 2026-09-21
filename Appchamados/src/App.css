@@ -2158,6 +2158,30 @@ textarea {
   overflow: auto;
 }
 
+.history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px 8px;
+  font-size: 14px;
+  color: #445;
+}
+
+.history-pagination button {
+  border: 1px solid #d8dfd2;
+  background: #fff;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.history-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+
 .stats-extended {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
