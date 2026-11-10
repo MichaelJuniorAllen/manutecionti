@@ -96,7 +96,7 @@ function WaitingTicketsPage({ onNotify, currentUserId, currentUserName }) {
     eventSource.onmessage = async (event) => {
       try {
         const payload = JSON.parse(event.data || '{}')
-        if (payload?.type === 'ticket-created' || payload?.type === 'ticket-updated') {
+        if (payload?.type === 'ticket-created' || payload?.type === 'ticket-updated' || payload?.type === 'ticket-chat-updated') {
           await loadTickets({ silent: true, notifyOnError: false })
         }
       } catch {

@@ -13,6 +13,52 @@ import { getEmailProviderStatus } from './services/mailer.js'
 const app = express()
 const PORT = Number(process.env.PORT || 4000)
 
+function validateProductionConfiguration() {
+  if (process.env.NODE_ENV !== 'production') {
+    return
+  }
+
+  const missing = []
+  if (!isUsingPostgres()) {
+    missing.push('DATABASE_URL (PostgreSQL remoto; JSON local no está permitido en producción)')
+  }
+
+  const jwtSecret = String(process.env.JWT_SECRET || '')
+  if (jwtSecret.length < 32 || jwtSecret === 'chamados-secret-dev') {
+    missing.push('JWT_SECRET (secreto aleatorio de al menos 32 caracteres)')
+  }
+
+  const publicAppUrl = String(process.env.PUBLIC_APP_URL || '')
+  try {
+    const parsedUrl = new URL(publicAppUrl)
+    if (parsedUrl.protocol !== 'https:') {
+      missing.push('PUBLIC_APP_URL (URL HTTPS del frontend)')
+    }
+  } catch {
+    missing.push('PUBLIC_APP_URL (URL HTTPS del frontend)')
+  }
+
+  const corsOrigins = String(process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+  if (!corsOrigins.length || corsOrigins.some((origin) => origin.includes('*'))) {
+    missing.push('CORS_ORIGINS (orígenes exactos del frontend)')
+  }
+
+  if (String(process.env.PGSSL || 'true').toLowerCase() === 'false') {
+    missing.push('PGSSL=true (conexión TLS al PostgreSQL remoto)')
+  }
+
+  if (!getEmailProviderStatus().configured) {
+    missing.push('credenciales de envío SMTP, Resend o SendGrid')
+  }
+
+  if (missing.length) {
+    throw new Error(`[CONFIG] Configuración de producción incompleta: ${missing.join('; ')}`)
+  }
+}
+
 function getAllowedOrigins() {
   const configuredOrigins = String(process.env.CORS_ORIGINS || '')
     .split(',')
@@ -86,6 +132,7 @@ const corsOptions = {
 }
 
 async function initializeApplication() {
+  validateProductionConfiguration()
   await ensureDatabase()
 
   app.use(cors(corsOptions))

@@ -16,6 +16,7 @@ const loadWaitingTicketsPage = () => import('./pages/WaitingTicketsPage')
 const loadProfilePage = () => import('./pages/ProfilePage')
 const loadMyHistoryPage = () => import('./pages/MyHistoryPage')
 const loadSettingsPage = () => import('./pages/SettingsPage')
+const loadChatPage = () => import('./pages/ChatPage')
 
 const NewTicketPage = lazy(loadNewTicketPage)
 const HistoryPage = lazy(loadHistoryPage)
@@ -23,6 +24,7 @@ const WaitingTicketsPage = lazy(loadWaitingTicketsPage)
 const ProfilePage = lazy(loadProfilePage)
 const MyHistoryPage = lazy(loadMyHistoryPage)
 const SettingsPage = lazy(loadSettingsPage)
+const ChatPage = lazy(loadChatPage)
 
 function playAlertSound() {
   try {
@@ -142,6 +144,14 @@ function App() {
         title: 'Alterar Senha',
         subtitle: 'Atualize sua senha com segurança.',
       },
+      '/chat': {
+        title: 'Conversa do chamado',
+        subtitle: 'Acompanhe e responda às mensagens da equipe de atendimento.',
+      },
+    }
+
+    if (location.pathname.startsWith('/chat/')) {
+      return map['/chat']
     }
 
     return map[location.pathname] || map['/']
@@ -414,6 +424,14 @@ function App() {
         <Route path="/" element={<HomePage onNavigate={(target) => navigate(target)} />} />
         <Route path="/autenticacao" element={<AuthPage onNotify={notify} />} />
         <Route path="/recuperar-senha" element={<PasswordResetPage onNotify={notify} />} />
+        <Route
+          path="/chat/:ticketId"
+          element={(
+            <Suspense fallback={routeFallback}>
+              <ChatPage />
+            </Suspense>
+          )}
+        />
         <Route
           path="/novo-chamado"
           element={(

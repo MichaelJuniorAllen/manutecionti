@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatDate, getDynamicPriorityKey, getRemainingMs } from '../utils/tickets'
 import Avatar from './common/Avatar'
+import TicketChat from './TicketChat'
 
 const PAUSE_REASON_OPTIONS = [
   'Final do expediente',
@@ -38,6 +39,7 @@ function TicketList({
   const [pauseNotes, setPauseNotes] = useState('')
   const [historyTicketId, setHistoryTicketId] = useState(null)
   const [actionLoadingId, setActionLoadingId] = useState('')
+  const [chatTicket, setChatTicket] = useState(null)
 
   useEffect(() => {
     setLocalTickets(tickets)
@@ -445,6 +447,16 @@ function TicketList({
                     >
                       🕘 Ver Histórico
                     </button>
+                    {ticket.emailSolicitante ? (
+                      <button
+                        type="button"
+                        className="action-btn chat-btn"
+                        onClick={() => setChatTicket(ticket)}
+                        title={`Abrir chat com ${ticket.emailSolicitante}`}
+                      >
+                        💬 Chat{ticket.ultimaMensagemChatTipo === 'requester' ? ' · nova resposta' : ''}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </article>
@@ -533,6 +545,12 @@ function TicketList({
             </div>
           </div>
         </div>
+      ) : null}
+      {chatTicket ? (
+        <TicketChat
+          ticket={chatTicket}
+          onClose={() => setChatTicket(null)}
+        />
       ) : null}
     </section>
   )

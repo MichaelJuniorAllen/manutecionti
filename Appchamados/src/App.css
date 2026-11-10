@@ -1382,6 +1382,224 @@ textarea {
   gap: 10px;
 }
 
+.chat-btn {
+  color: #fff;
+  background: linear-gradient(135deg, #26734d 0%, #1e5a41 100%);
+}
+
+.chat-btn:hover {
+  background: linear-gradient(135deg, #1e5a41 0%, #165133 100%);
+  transform: translateY(-2px);
+}
+
+.ticket-chat {
+  display: grid;
+  grid-template-rows: auto auto minmax(180px, 1fr) auto auto;
+  overflow: hidden;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(36, 45, 34, 0.24);
+}
+
+.ticket-chat-floating {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 100;
+  width: min(420px, calc(100vw - 32px));
+  height: min(640px, calc(100vh - 48px));
+}
+
+.ticket-chat-header {
+  position: static;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px;
+  color: #fff;
+  background: var(--green);
+}
+
+.ticket-chat-header > div {
+  display: grid;
+  min-width: 0;
+}
+
+.ticket-chat-header strong {
+  font-size: 15px;
+}
+
+.ticket-chat-header small {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.84);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-chat-close {
+  flex: 0 0 32px;
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.ticket-chat-context {
+  display: grid;
+  gap: 4px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #f8faf6;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.ticket-chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 14px;
+  background: #f7f9f5;
+}
+
+.ticket-chat-empty {
+  margin: auto;
+  max-width: 260px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+}
+
+.ticket-chat-message {
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 86%;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px 12px 12px 3px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+
+.ticket-chat-message.is-own {
+  align-self: flex-end;
+  border-color: #d3e2d0;
+  border-radius: 12px 12px 3px 12px;
+  background: #e8f1e4;
+}
+
+.ticket-chat-author,
+.ticket-chat-message time {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ticket-chat-message p {
+  margin: 3px 0 5px;
+  white-space: pre-wrap;
+  font-size: 13px;
+}
+
+.ticket-chat-message time {
+  text-align: right;
+}
+
+.ticket-chat-feedback {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--amber);
+  background: #fff8e9;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.ticket-chat-feedback.error {
+  color: var(--red);
+  background: #fff1f0;
+}
+
+.ticket-chat-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+
+.ticket-chat-composer textarea {
+  width: 100%;
+  min-height: 44px;
+  max-height: 120px;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.ticket-chat-composer button {
+  min-height: 40px;
+  padding: 0 14px;
+}
+
+.ticket-chat-composer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ticket-chat-page {
+  width: min(760px, 100%);
+  margin: 20px auto;
+}
+
+.ticket-chat-standalone {
+  height: min(720px, calc(100vh - 220px));
+  min-height: 420px;
+}
+
+.ticket-chat-invalid {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.ticket-chat-invalid h2,
+.ticket-chat-invalid p {
+  margin: 0;
+}
+
+@media (max-width: 620px) {
+  .ticket-chat-floating {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+    height: min(640px, calc(100vh - 24px));
+  }
+
+  .ticket-chat-standalone {
+    height: calc(100vh - 210px);
+    min-height: 360px;
+  }
+}
+
 .timeline-item {
   border: 1px solid var(--line);
   border-left: 4px solid var(--blue);

@@ -6,18 +6,29 @@ function NewTicketPage({ onNotify }) {
   const navigate = useNavigate()
 
   async function handleSubmitTicket(values, options = {}) {
-    await api.tickets.create({
+    const result = await api.tickets.create({
       titulo: values.title,
       descricao: values.description,
       area: values.area,
       solicitante: values.requester,
-      emailCorporativo: values.corporateEmail,
+      emailSolicitante: values.emailSolicitante,
       prioridade: values.priority,
       tecnicoResponsavel: values.responsible,
       observacoes: values.description,
       clientRequestId: options.clientRequestId || '',
     })
-    onNotify('success', 'Seu chamado foi aberto com sucesso!')
+    if (values.emailSolicitante && result.emailSent === false) {
+      onNotify('warning', result.emailError || 'Chamado registrado, mas não foi possível enviar o e-mail.')
+    } else {
+      onNotify('success', 'Seu chamado foi aberto com sucesso!')
+    }
+
+    return {
+      ...result,
+      chatUrl: result.chatAccessToken
+        ? `/chat/${encodeURIComponent(result.ticket.id)}?token=${encodeURIComponent(result.chatAccessToken)}`
+        : '',
+    }
   }
 
   return <TicketForm onSubmitTicket={handleSubmitTicket} onNavigate={(path) => navigate(path)} />

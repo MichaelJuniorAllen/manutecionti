@@ -7,32 +7,12 @@ const RESPONSIBLE_OPTIONS = [
   { value: 'Engenharia Clínica', description: 'Equipamentos médico-hospitalares e clínicos.' },
 ]
 
-const ALLOWED_TICKET_EMAILS = [
-  'scihupacentral@maoamigacaxias.org.br',
-  'nutricionistaupacentral@maoamigacaxias.org.br',
-  'coordadmupacentral@maoamigacaxias.org.br',
-  'coordinfraestruraupacentral@maoamigacaxias.org.br',
-  'educacaocontinuadaupacentral@maoamigacaxias.org.br',
-  'farmaceuticaclinicaupacentral@maoamigacaxias.org.br',
-  'coordfarmaciaupacentral@maoamigacaxias.org.br',
-  'diretorclinicoupacentral@maoamigacaxias.org.br',
-  'coordmedicoupacentral@maoamigacaxias.org.br',
-  'faturamentoupacentral@maoamigacaxias.org.br',
-  'tiupacentral@maoamigacaxias.org.br',
-  'manutencaoupacentral@maoamigacaxias.org.br',
-  'sesmtupacentral@maoamigacaxias.org.br',
-  'assistentesocialupacentral@maoamigacaxias.org.br',
-  'recpcaoupacentral@maoamigacaxias.org.br',
-  'enfermagemupacentral@maoamigacaxias.org.br',
-  'odontologiaupacentral@maoamigacaxias.org.br',
-  'coordenfermagemupacentral@maoamigacaxias.org.br',
-]
-
 function TicketForm({ onSubmitTicket, onNavigate }) {
   const [formValues, setFormValues] = useState({
     title: '',
     area: '',
     requester: '',
+    emailSolicitante: '',
     priority: 'media',
     responsible: '',
     description: '',
@@ -78,17 +58,20 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
     }
 
     try {
-      await onSubmitTicket?.(formValues, { clientRequestId: submitRequestIdRef.current })
+      const result = await onSubmitTicket?.(formValues, { clientRequestId: submitRequestIdRef.current })
       setFormValues({
         title: '',
         area: '',
         requester: '',
+        emailSolicitante: '',
         priority: 'media',
         responsible: '',
         description: '',
       })
       submitRequestIdRef.current = ''
-      setMessage('Seu chamado foi aberto com sucesso!')
+      setMessage(result?.emailSent === false && formValues.emailSolicitante
+        ? 'Chamado registrado, mas não foi possível enviar o e-mail. Você será redirecionado à página inicial.'
+        : 'Seu chamado foi aberto com sucesso!')
 
       window.setTimeout(() => {
         onNavigate?.('/')
@@ -166,6 +149,21 @@ function TicketForm({ onSubmitTicket, onNavigate }) {
                   className="form-input"
                 />
               </div>
+            </div>
+            <div className="field">
+              <label htmlFor="emailSolicitante">E-mail para receber respostas (opcional)</label>
+              <input
+                id="emailSolicitante"
+                name="emailSolicitante"
+                type="email"
+                autoComplete="email"
+                maxLength={254}
+                placeholder="seu.email@exemplo.com"
+                value={formValues.emailSolicitante}
+                onChange={handleChange}
+                className="form-input"
+              />
+              <small>Se informar um e-mail, você receberá a confirmação e poderá acompanhar as respostas pelo chat.</small>
             </div>
           </div>
 

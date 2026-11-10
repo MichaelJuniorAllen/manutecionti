@@ -5,11 +5,12 @@ const smtpHost = process.env.SMTP_HOST
 const smtpPort = Number(process.env.SMTP_PORT || 587)
 const smtpUser = process.env.SMTP_USER
 const smtpPass = process.env.SMTP_PASS
-const smtpFrom = process.env.SMTP_FROM || smtpUser || 'no-reply@appchamados.local'
+const supportEmail = String(process.env.SUPPORT_EMAIL || 'Suporte@upacentral.co.uk').trim()
+const smtpFrom = process.env.SMTP_FROM || smtpUser || supportEmail
 const resendApiKey = process.env.RESEND_API_KEY || ''
 const emailServiceApiKey = process.env.EMAIL_SERVICE_API_KEY || ''
 const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpFrom
-const resendFromAddress = String(process.env.RESEND_FROM_ADDRESS || '').trim()
+const resendFromAddress = String(process.env.RESEND_FROM_ADDRESS || `Suporte <${supportEmail}>`).trim()
 const emailFallbackEnabled = String(process.env.EMAIL_FALLBACK_ENABLED || '').trim().toLowerCase() === 'true'
 
 const smtpConfigured = Boolean(smtpHost && smtpPort && smtpUser && smtpPass)
@@ -34,6 +35,10 @@ export function isSmtpConfigured() {
   return smtpConfigured || resendConfigured || apiEmailConfigured
 }
 
+export function getSupportEmail() {
+  return supportEmail
+}
+
 export function getEmailProviderStatus() {
   if (resendConfigured) {
     return { configured: true, provider: 'resend' }
@@ -48,6 +53,63 @@ export function getEmailProviderStatus() {
   }
 
   return { configured: false, provider: 'fallback' }
+}
+
+export async function sendNotificationEmail({ to, subject, text, html, replyTo }) {
+  if (!to || !subject) {
+    throw new Error('Dados insuficientes para enviar a notificação por e-mail.')
+  }
+
+  if (!isSmtpConfigured()) {
+    throw new Error('Nenhum provedor de e-mail configurado. Configure SMTP, Resend ou SendGrid no ambiente do servidor.')
+  }
+
+  if (resendConfigured) {
+    const { error } = await resendClient.emails.send({
+      from: resendFromAddress,
+      to: [to],
+      subject,
+      html,
+      text,
+      ...(replyTo ? { replyTo } : {}),
+    })
+    if (error) {
+      throw new Error(`Não foi possível enviar a notificação por e-mail via Resend. ${error.message || ''}`.trim())
+    }
+    return { mode: 'resend' }
+  }
+
+  if (apiEmailConfigured) {
+    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${emailServiceApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: emailFromAddress },
+        ...(replyTo ? { reply_to: { email: replyTo } } : {}),
+        subject,
+        content: [
+          { type: 'text/plain', value: text },
+          { type: 'text/html', value: html },
+        ],
+      }),
+    })
+    if (!response.ok) {
+      const details = await response.text().catch(() => '')
+      throw new Error(`Não foi possível enviar a notificação por e-mail via API. ${details}`.trim())
+    }
+    return { mode: 'sendgrid' }
+  }
+
+  try {
+    await transporter.sendMail({ from: smtpFrom, to, subject, text, html, ...(replyTo ? { replyTo } : {}) })
+    return { mode: 'smtp' }
+  } catch {
+    throw new Error('Não foi possível enviar a notificação por e-mail. Verifique a configuração SMTP/API.')
+  }
 }
 
 async function sendEmailViaSendGrid({ to, subject, text, html }) {

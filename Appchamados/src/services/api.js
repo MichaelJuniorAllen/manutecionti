@@ -239,6 +239,16 @@ export const api = {
     create(payload, requestOptions = {}) {
       return request('/tickets', { method: 'POST', body: payload, ...requestOptions })
     },
+    chat(id, requestOptions = {}) {
+      return request(`/tickets/${encodeURIComponent(id)}/chat`, requestOptions)
+    },
+    sendChatMessage(id, message, requestOptions = {}) {
+      return request(`/tickets/${encodeURIComponent(id)}/chat`, {
+        method: 'POST',
+        body: { message },
+        ...requestOptions,
+      })
+    },
     mine(filters = {}, requestOptions = {}) {
       const query = new URLSearchParams()
       Object.entries(filters).forEach(([key, value]) => {

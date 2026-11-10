@@ -1,7 +1,9 @@
 import express from 'express'
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { optionalAuth, requireAuth } from '../middleware/auth.js'
 import { verifyToken } from '../services/auth.js'
 import { createTicketNumber, mutateDatabase, nextNumericId, nowIso, readDatabase } from '../services/database.js'
+import { getSupportEmail, sendNotificationEmail } from '../services/mailer.js'
 
 const router = express.Router()
 
@@ -48,6 +50,8 @@ const PAUSE_REASONS = new Set([
   'Necessita outro técnico',
   'Outro',
 ])
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const CHAT_MESSAGE_MAX_LENGTH = 5000
 
 const streamClients = new Set()
 const TEN_MINUTES_MS = 10 * 60 * 1000
@@ -341,6 +345,9 @@ function toTicketResponse(ticket, db = null, options = {}) {
   const totalWorkedFromSessions = mappedSessions.reduce((acc, item) => {
     return Number.isFinite(item.tempoTrabalhado) ? acc + item.tempoTrabalhado : acc
   }, 0)
+  const lastChatMessage = Array.isArray(ticket.chat_messages) && ticket.chat_messages.length
+    ? ticket.chat_messages[ticket.chat_messages.length - 1]
+    : null
 
   return {
     id: ticket.id,
@@ -355,6 +362,9 @@ function toTicketResponse(ticket, db = null, options = {}) {
     tempoAndamento: Number.isFinite(inProgressFromSessions) ? inProgressFromSessions : inProgressResolution,
     observacoes: ticket.observacoes,
     solicitante: ticket.solicitante,
+    emailSolicitante: ticket.email_solicitante || '',
+    ultimaMensagemChatTipo: lastChatMessage?.author_type || '',
+    totalMensagensChat: Array.isArray(ticket.chat_messages) ? ticket.chat_messages.length : 0,
     titulo: ticket.titulo,
     descricao: ticket.descricao,
     dueAt: ticket.due_at,
@@ -412,6 +422,7 @@ router.post('/', optionalAuth, async (req, res) => {
     descricao: (req.body.descricao || '').trim(),
     area: (req.body.area || '').trim(),
     solicitante: (req.body.solicitante || '').trim(),
+    email_solicitante: normalize(req.body.emailSolicitante || ''),
     email_corporativo: normalize(req.body.emailCorporativo || ''),
     prioridade: (req.body.prioridade || 'media').trim().toLowerCase(),
     tecnico_responsavel: (req.body.tecnicoResponsavel || '').trim(),
@@ -423,6 +434,10 @@ router.post('/', optionalAuth, async (req, res) => {
     return res.status(400).json({ message: 'Título, descrição e área são obrigatórios.' })
   }
 
+  if (payload.email_solicitante && (payload.email_solicitante.length > 254 || !EMAIL_PATTERN.test(payload.email_solicitante))) {
+    return res.status(400).json({ message: 'Informe um e-mail válido para receber respostas do chamado.' })
+  }
+
   if (!priorityToMinutes[payload.prioridade]) {
     return res.status(400).json({ message: 'Prioridade inválida.' })
   }
@@ -430,6 +445,7 @@ router.post('/', optionalAuth, async (req, res) => {
   try {
     let created
     let wasDuplicate = false
+    let chatAccessToken = ''
     await mutateDatabase(async (db) => {
       const openedAt = nowIso()
       const dueAt = new Date(Date.now() + priorityToMinutes[payload.prioridade] * 60000).toISOString()
@@ -439,6 +455,11 @@ router.post('/', optionalAuth, async (req, res) => {
       const sameRequestTicket = findTicketByClientRequestId(db, payload.client_request_id, userId)
       if (sameRequestTicket) {
         wasDuplicate = true
+        if (payload.email_solicitante) {
+          sameRequestTicket.email_solicitante = payload.email_solicitante
+          sameRequestTicket.chat_access_token = sameRequestTicket.chat_access_token || randomBytes(32).toString('hex')
+          chatAccessToken = sameRequestTicket.chat_access_token
+        }
         created = toTicketResponse(sameRequestTicket, db)
         return
       }
@@ -450,15 +471,24 @@ router.post('/', optionalAuth, async (req, res) => {
 
       if (duplicate) {
         wasDuplicate = true
+        if (payload.email_solicitante) {
+          duplicate.email_solicitante = payload.email_solicitante
+          duplicate.chat_access_token = duplicate.chat_access_token || randomBytes(32).toString('hex')
+          chatAccessToken = duplicate.chat_access_token
+        }
         created = toTicketResponse(duplicate, db)
         return
       }
 
+      chatAccessToken = payload.email_solicitante ? randomBytes(32).toString('hex') : ''
       const ticket = {
         id: nextNumericId(db.chamados),
         numero_chamado: createTicketNumber(),
         usuario_id: userId,
         solicitante: requester,
+        email_solicitante: payload.email_solicitante,
+        chat_access_token: chatAccessToken || null,
+        chat_messages: [],
         titulo: payload.titulo,
         descricao: payload.descricao,
         area: payload.area,
@@ -496,11 +526,51 @@ router.post('/', optionalAuth, async (req, res) => {
       return res.status(500).json({ message: 'Não foi possível processar a abertura do chamado.' })
     }
 
+    let emailSent = false
+    let emailError = ''
+    if (chatAccessToken && payload.email_solicitante) {
+      const publicAppUrl = String(process.env.PUBLIC_APP_URL || req.get('origin') || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '')
+      const chatUrl = `${publicAppUrl}/chat/${encodeURIComponent(created.id)}?token=${encodeURIComponent(chatAccessToken)}`
+      const subject = `Seu chamado foi aberto com sucesso! (#${created.numeroChamado})`
+      const text = [
+        `Olá, ${created.solicitante || 'solicitante'}.`,
+        '',
+        'Seu chamado foi aberto com sucesso!',
+        `Título: ${created.titulo}`,
+        `Número: ${created.numeroChamado}`,
+        'Status: Aberto',
+        '',
+        'Acompanhe o chamado e responda à equipe pelo chat seguro:',
+        chatUrl,
+      ].join('\n')
+      const html = `
+        <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.5; color: #20251f;">
+          <h2>Seu chamado foi aberto com sucesso!</h2>
+          <p>Olá, <strong>${escapeHtml(created.solicitante || 'solicitante')}</strong>.</p>
+          <p>Recebemos sua solicitação e seu chamado foi aberto com sucesso.</p>
+          <p>Título: <strong>${escapeHtml(created.titulo)}</strong></p>
+          <p>Número: <strong>${escapeHtml(created.numeroChamado)}</strong></p>
+          <p>Status: <strong>Aberto</strong></p>
+          <p><a href="${escapeHtml(chatUrl)}">Acompanhar e responder pelo chat seguro</a></p>
+        </div>
+      `
+      try {
+        await sendNotificationEmail({ to: payload.email_solicitante, subject, text, html })
+        emailSent = true
+      } catch (error) {
+        emailError = error.message || 'Não foi possível enviar a notificação por e-mail.'
+        console.error(`[CHAT] Não foi possível enviar a confirmação do chamado ${created.numeroChamado}:`, emailError)
+      }
+    }
+
     if (wasDuplicate) {
       return res.status(200).json({
         message: 'Chamado já registrado há instantes. Retornando o chamado existente para evitar duplicidade.',
         ticket: created,
         duplicate: true,
+        chatAccessToken: chatAccessToken || null,
+        emailSent,
+        emailError: emailError || null,
       })
     }
 
@@ -510,9 +580,173 @@ router.post('/', optionalAuth, async (req, res) => {
       timestamp: nowIso(),
     })
 
-    return res.status(201).json({ message: 'Chamado aberto com sucesso.', ticket: created })
+    return res.status(201).json({
+      message: 'Chamado aberto com sucesso.',
+      ticket: created,
+      chatAccessToken: chatAccessToken || null,
+      emailSent,
+      emailError: emailError || null,
+    })
   } catch (error) {
     return res.status(500).json({ message: error.message || 'Erro ao abrir chamado.' })
+  }
+})
+
+function escapeHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character])
+}
+
+function getChatTicketId(req) {
+  return String(req.params.id || '')
+}
+
+function getChatAccessToken(req) {
+  const authorization = req.headers.authorization || ''
+  return authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
+}
+
+async function findChatTicket(req) {
+  const db = await readDatabase()
+  const ticket = db.chamados.find((item) => String(item.id) === getChatTicketId(req))
+  if (!ticket) return { db, ticket: null, isStaff: Boolean(req.auth) }
+
+  const isStaff = Boolean(req.auth)
+  const token = getChatAccessToken(req)
+  const providedToken = Buffer.from(token)
+  const storedToken = Buffer.from(ticket.chat_access_token || '')
+  const hasRequesterAccess = providedToken.length > 0
+    && providedToken.length === storedToken.length
+    && timingSafeEqual(providedToken, storedToken)
+
+  if (!isStaff && !hasRequesterAccess) {
+    return { db, ticket: null, isStaff: false }
+  }
+
+  return { db, ticket, isStaff }
+}
+
+function toChatResponse(ticket) {
+  return {
+    ticket: {
+      id: ticket.id,
+      numeroChamado: ticket.numero_chamado,
+      titulo: ticket.titulo,
+      solicitante: ticket.solicitante,
+      emailSolicitante: ticket.email_solicitante || '',
+    },
+    messages: (ticket.chat_messages || []).map((message) => ({
+      id: message.id,
+      authorType: message.author_type,
+      authorName: message.author_name,
+      text: message.text,
+      createdAt: message.created_at,
+    })),
+  }
+}
+
+router.get('/:id/chat', optionalAuth, async (req, res) => {
+  try {
+    const { ticket } = await findChatTicket(req)
+    if (!ticket) {
+      return res.status(404).json({ message: 'Conversa não encontrada ou link de acesso inválido.' })
+    }
+    return res.json(toChatResponse(ticket))
+  } catch (error) {
+    return res.status(500).json({ message: error.message || 'Não foi possível carregar a conversa.' })
+  }
+})
+
+router.post('/:id/chat', optionalAuth, async (req, res) => {
+  const text = String(req.body.message || '').trim()
+  if (!text || text.length > CHAT_MESSAGE_MAX_LENGTH) {
+    return res.status(400).json({ message: `A mensagem deve ter entre 1 e ${CHAT_MESSAGE_MAX_LENGTH} caracteres.` })
+  }
+
+  try {
+    const { ticket: authorizedTicket, isStaff } = await findChatTicket(req)
+    if (!authorizedTicket) {
+      return res.status(404).json({ message: 'Conversa não encontrada ou link de acesso inválido.' })
+    }
+
+    let createdMessage
+    let recipient = ''
+    let ticketNumber = ''
+    let chatUrl = ''
+    const timestamp = nowIso()
+    await mutateDatabase(async (db) => {
+      const ticket = db.chamados.find((item) => String(item.id) === getChatTicketId(req))
+      if (!ticket) {
+        throw createHttpError(404, 'Chamado não encontrado.')
+      }
+      if (!Array.isArray(ticket.chat_messages)) ticket.chat_messages = []
+      const authorName = isStaff
+        ? (req.auth.user.nome || req.auth.user.email || 'Equipe de atendimento')
+        : (ticket.solicitante || 'Solicitante')
+      createdMessage = {
+        id: randomUUID(),
+        author_type: isStaff ? 'staff' : 'requester',
+        author_id: isStaff ? req.auth.user.id : null,
+        author_name: authorName,
+        text,
+        created_at: timestamp,
+      }
+      ticket.chat_messages.push(createdMessage)
+      recipient = isStaff ? (ticket.email_solicitante || '') : ''
+      ticketNumber = ticket.numero_chamado
+      const publicAppUrl = String(process.env.PUBLIC_APP_URL || req.get('origin') || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '')
+      chatUrl = `${publicAppUrl}/chat/${encodeURIComponent(ticket.id)}?token=${encodeURIComponent(ticket.chat_access_token || '')}`
+    })
+
+    let emailSent = false
+    let emailError = ''
+    if (isStaff && recipient) {
+      const subject = `Nova resposta no chamado ${ticketNumber}`
+      const escapedMessage = escapeHtml(text).replace(/\n/g, '<br>')
+      try {
+        await sendNotificationEmail({
+          to: recipient,
+          subject,
+          text: `A equipe respondeu ao chamado ${ticketNumber}:\n\n${text}\n\nAcesse a conversa: ${chatUrl}`,
+          html: `
+            <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.5; color: #20251f;">
+              <h2>Nova resposta no chamado ${escapeHtml(ticketNumber)}</h2>
+              <p>${escapedMessage}</p>
+              <p><a href="${escapeHtml(chatUrl)}">Abrir e responder no chat</a></p>
+            </div>
+          `,
+          replyTo: getSupportEmail(),
+        })
+        emailSent = true
+      } catch (error) {
+        emailError = error.message || 'Não foi possível enviar a resposta por e-mail.'
+        console.error(`[CHAT] Não foi possível enviar resposta do chamado ${ticketNumber}:`, emailError)
+      }
+    }
+
+    broadcastTicketEvent({
+      type: 'ticket-chat-updated',
+      ticketId: getChatTicketId(req),
+      timestamp,
+    })
+    return res.status(201).json({
+      message: {
+        id: createdMessage.id,
+        authorType: createdMessage.author_type,
+        authorName: createdMessage.author_name,
+        text: createdMessage.text,
+        createdAt: createdMessage.created_at,
+      },
+      emailSent,
+      emailError: emailError || null,
+    })
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Não foi possível enviar a mensagem.' })
   }
 })
 

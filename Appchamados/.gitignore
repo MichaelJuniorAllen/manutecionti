@@ -16,6 +16,11 @@ dist-ssr
 !.env.example
 !.env.production
 
+# Local database and user-uploaded profile photos must not be committed.
+/server/data/database.json
+/public/uploads/profiles/*
+!/public/uploads/profiles/.gitkeep
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

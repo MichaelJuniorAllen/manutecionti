@@ -43,13 +43,15 @@ Esse comando copia os dados atuais de `server/data/database.json` para PostgreSQ
 
 ## SMTP e Resend para confirmação de e-mail
 
-O sistema já está preparado para envio real do código de confirmação por SMTP e Resend.
+O sistema usa `Suporte@upacentral.co.uk` como endereço do sistema e `Reply-To` das respostas do chat. Para enviar de verdade, também é necessário configurar as credenciais do provedor (SMTP, `RESEND_API_KEY` ou `EMAIL_SERVICE_API_KEY` do SendGrid); informar somente o endereço de e-mail não autentica o servidor de envio. O endereço precisa estar autorizado/verificado no provedor escolhido.
 
 1. Copie `.env.example` para `.env`.
 2. Preencha as variáveis SMTP ou `RESEND_API_KEY`/`RESEND_FROM_ADDRESS`.
 3. Reinicie o `npm start` e confirme no log `Provedor de e-mail: resend`, `smtp` ou `sendgrid`.
 
 Se Resend estiver configurado, ele passa a ser o provedor principal de e-mail. Em produção, sem SMTP/Resend/SendGrid configurado, a API informa erro em vez de confirmar um envio inexistente. Para testes locais, defina `EMAIL_FALLBACK_ENABLED=true` para registrar o código no log do servidor.
+
+Chamados podem incluir o e-mail pessoal opcional do solicitante. Quando informado, o sistema envia a esse endereço a confirmação **“Seu chamado foi aberto com sucesso!”**, com o número do chamado e um link privado para o chat. As respostas da equipe também são enviadas ao mesmo endereço. Configure um provedor real (SMTP, Resend ou SendGrid) e `PUBLIC_APP_URL` com a URL do frontend (por exemplo, `https://seu-dominio.com`) para habilitar o envio e gerar links corretos. Sem provedor configurado, o chamado é salvo, mas nenhum e-mail pode ser enviado; a aplicação informa esse erro.
 
 ### Gerenciar domínio do Resend
 
@@ -68,45 +70,50 @@ Depois de criar o domínio, use o `id` retornado para consultar ou verificar:
 POST /api/settings/resend-domains/:id/verify
 ```
 
-## Deploy estável (Cloudflare Pages + Backend externo)
+## Deploy em produção (Cloudflare Pages + backend externo)
 
-Para funcionar sem erro em produção, publique o frontend no Cloudflare Pages e o backend em um serviço Node (Render, Railway, Fly.io, VPS etc).
+Publique o frontend no Cloudflare Pages/Netlify e o backend em um serviço Node (Render, Railway, Fly.io, VPS etc.). Execute o backend dentro de `Appchamados`, instale com `npm ci` e inicie com `npm start`.
 
-### 1. Publicar backend
+### 1. Configurar backend e PostgreSQL remoto
 
-No serviço do backend, configure as variáveis:
+Cadastre estas variáveis no painel do serviço do backend, nunca em arquivos commitados ou no frontend:
 
-- `PORT=4000` (ou a porta do provedor)
-- `JWT_SECRET=seu_segredo_forte`
+- `NODE_ENV=production`
+- `PORT=4000` (ou a porta fornecida pelo host)
+- `JWT_SECRET` com pelo menos 32 caracteres aleatórios; não use `chamados-secret-dev`
 - `JWT_EXPIRES_IN=8h`
-- `CORS_ORIGINS=https://SEU-SITE.pages.dev,https://SEU-DOMINIO.com`
-- `DATABASE_URL=postgresql://USER:PASS@HOST:5432/DBNAME`
+- `PUBLIC_APP_URL=https://SEU-SITE.pages.dev`
+- `CORS_ORIGINS=https://SEU-SITE.pages.dev,https://SEU-DOMINIO.com` (somente origens reais)
+- `DATABASE_URL=postgresql://USUARIO:SENHA@HOST:5432/DBNAME`
 - `PGSSL=true`
-- SMTP (opcional): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
+- `SUPPORT_EMAIL=Suporte@upacentral.co.uk`
+- Um provedor de envio verificado: SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`), Resend (`RESEND_API_KEY`, `RESEND_FROM_ADDRESS`) ou SendGrid (`EMAIL_SERVICE_API_KEY`, `EMAIL_FROM_ADDRESS`).
 
-Após deploy, copie a URL pública da API, por exemplo:
+O servidor de produção exige PostgreSQL, segredo JWT forte, URL pública do frontend, origens CORS e credenciais de e-mail. Sem esses requisitos, encerra com erro explícito em vez de iniciar com banco JSON local ou declarar notificações funcionando sem provedor.
 
-`https://seu-backend.onrender.com/api`
+Como o banco está em outro computador, o backend publicado precisa ter uma rota de rede permanente até ele. Prefira VPN/rede privada ou permita no firewall somente o IP de saída do backend; não exponha a porta `5432` para toda a internet. Configure PostgreSQL para aceitar conexões remotas somente de clientes autorizados, com TLS e um usuário de aplicação de permissões restritas. A aplicação cria a tabela `app_state` automaticamente; esse usuário precisa poder criar e atualizar a tabela.
 
-Confira `https://seu-backend.onrender.com/api/health`: o campo `email.configured` precisa ser `true`. Para Resend, configure `RESEND_API_KEY` e `RESEND_FROM_ADDRESS` usando um remetente de domínio verificado.
+Um IP `localhost` ou privado não será alcançável por um backend na nuvem. Use no `DATABASE_URL` o endereço realmente alcançável pelo servidor (por exemplo, o IP da VPN). Não envie senhas ou URLs com credenciais pelo GitHub/chat; cadastre-as somente como variáveis secretas no host do backend.
 
-### 2. Configurar Cloudflare Pages
+Depois do deploy, verifique `https://SEU-BACKEND/api/health`: `driver` deve ser `postgres` e `email.configured` deve ser `true`.
 
-No projeto Cloudflare Pages:
+### 2. Configurar frontend
+
+No Cloudflare Pages/Netlify:
 
 - Build command: `npm run build`
 - Publish directory: `dist`
-- A variável `VITE_API_URL` já está definida em `.env.production` para `https://api.upacentral.co.uk/api`.
-  Altere-a caso a API esteja em outro endereço e faça um novo deploy.
+- Variável de produção `VITE_API_URL=https://SEU-BACKEND/api`
+- Regra SPA para devolver `index.html` em rotas sem ficheiro.
 
-Adicione uma regra de SPA no Cloudflare Pages para devolver `index.html` em rotas sem ficheiro.
+`VITE_API_URL` e publica e fica incorporada no bundle. Nunca coloque nela senhas, tokens ou chaves de provedores.
 
-### 3. Validar após publicar
+### 3. Dados locais e validacao
 
-1. Abra o site publicado no Cloudflare Pages.
-2. Crie um chamado como visitante.
-3. Faça login e abra “Meu Histórico”.
-4. Verifique no backend se `CORS_ORIGINS` aceita o domínio Cloudflare Pages e o domínio personalizado, quando existir.
-5. Verifique `GET /api/health` e confirme `driver: "postgres"`.
+`server/data/database.json` e `public/uploads/profiles` são dados locais e ficam excluídos dos próximos commits. Em hospedagens com disco efêmero, configure armazenamento persistente para uploads ou use armazenamento de objetos.
 
-Se o frontend carregar e as chamadas de API responderem 200/401/403 corretamente (sem erro de CORS), o deploy está estável.
+1. Confirme no `/api/health` que `driver` é `postgres` e `email.configured` é `true`.
+2. Teste cadastro de chamado, confirmação por e-mail, chat, login e histórico.
+3. Verifique CORS para cada domínio real do frontend.
+
+> **Histórico do Git:** o JSON local e uma foto de perfil já aparecem em commits anteriores. Deixá-los de fora dos próximos commits não apaga as cópias do histórico remoto. Antes de tornar público um repositório que já foi compartilhado, mantenha-o privado ou planeje a remoção do histórico e a rotação de credenciais/dados expostos.
