@@ -114,3 +114,5 @@
 {"level":"info","event":0,"ip":"198.41.200.73","connIndex":0,"time":"2026-11-10T15:27:29Z","message":"Tunnel connection curve preferences: [X25519MLKEM768 CurveID(65074) CurveP256]"}
 {"level":"error","event":0,"ip":"198.41.200.73","connIndex":0,"error":"Unauthorized: Tunnel not found","time":"2026-11-10T15:27:29Z","message":"Register tunnel error from server side"}
 {"level":"info","event":0,"ip":"198.41.200.73","connIndex":0,"time":"2026-11-10T15:27:29Z","message":"Retrying connection in up to 32s"}
+{"level":"info","event":0,"ip":"198.41.200.73","connIndex":0,"time":"2026-11-10T15:27:58Z","message":"Tunnel connection curve preferences: [X25519MLKEM768 CurveID(65074) CurveP256]"}
+{"level":"info","event":0,"connection":"f796a2cc-bf29-4506-ba18-e5472e3c31fa","connIndex":0,"location":"gru18","ip":"198.41.200.73","protocol":"quic","time":"2026-11-10T15:27:59Z","message":"Registered tunnel connection"}
