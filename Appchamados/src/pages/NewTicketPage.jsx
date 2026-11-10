@@ -17,8 +17,8 @@ function NewTicketPage({ onNotify }) {
       observacoes: values.description,
       clientRequestId: options.clientRequestId || '',
     })
-    if (values.emailSolicitante && result.emailSent === false) {
-      onNotify('warning', result.emailError || 'Chamado registrado, mas não foi possível enviar o e-mail.')
+    if (values.emailSolicitante && result.emailSent === false && result.emailError) {
+      onNotify('warning', result.emailError)
     } else {
       onNotify('success', 'Seu chamado foi aberto com sucesso!')
     }

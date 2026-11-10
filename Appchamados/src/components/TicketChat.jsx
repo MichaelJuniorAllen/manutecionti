@@ -59,9 +59,9 @@ function TicketChat({ ticket, publicTicketId = '', accessToken = '', standalone 
       setConversation((current) => current
         ? { ...current, messages: [...current.messages, result.message] }
         : current)
-      if (!standalone && result.emailSent === false) {
-        setNotice(result.emailError || 'Mensagem registrada no chat, mas o e-mail não foi enviado.')
-      } else if (!standalone) {
+      if (!standalone && result.emailSent === false && result.emailError) {
+        setNotice(result.emailError)
+      } else if (!standalone && result.emailSent === true) {
         setNotice('Mensagem enviada e notificação por e-mail entregue.')
       }
     } catch (sendError) {
