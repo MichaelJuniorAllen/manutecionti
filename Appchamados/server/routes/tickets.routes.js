@@ -687,12 +687,21 @@ async function ingestInboundReply(payload = {}) {
   const requesterEmail = normalizeEmailAddress(from)
   const subjectReference = extractTicketReferenceFromSubject(subject)
 
-  const ticket = db.chamados.find((item) => {
-    if (normalizeEmailAddress(item.email_solicitante) === requesterEmail) return true
-    if (normalizeEmailAddress(item.email_corporativo) === requesterEmail) return true
-    if (subjectReference && String(item.numero_chamado || '').toUpperCase().includes(subjectReference)) return true
-    return false
+  const candidates = db.chamados.filter((item) => {
+    const itemEmail = normalizeEmailAddress(item.email_solicitante)
+    const itemCorporateEmail = normalizeEmailAddress(item.email_corporativo)
+    return itemEmail === requesterEmail || itemCorporateEmail === requesterEmail
   })
+
+  let ticket = null
+
+  if (subjectReference) {
+    ticket = candidates.find((item) => String(item.numero_chamado || '').toUpperCase().includes(subjectReference))
+      || [...candidates].sort((a, b) => new Date(b.data_abertura || 0) - new Date(a.data_abertura || 0))[0]
+      || null
+  } else {
+    ticket = [...candidates].sort((a, b) => new Date(b.data_abertura || 0) - new Date(a.data_abertura || 0))[0] || null
+  }
 
   if (!ticket) {
     throw createHttpError(404, 'Nenhum chamado encontrado para esta resposta do e-mail.')
