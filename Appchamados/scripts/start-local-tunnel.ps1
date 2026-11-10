@@ -36,7 +36,9 @@ if (-not (Test-Path '.\.env')) {
 }
 
 Write-Host "==> Iniciando backend local (porta 4000)..." -ForegroundColor Cyan
-$backend = Start-Process -FilePath 'node' -ArgumentList 'server/index.js' -PassThru -WindowStyle Minimized -RedirectStandardOutput 'server-local.log' -RedirectStandardError 'server-local.err.log'
+$backendOut = 'server-local.log'
+$backendErr = 'server-local.err.log'
+$backend = Start-Process -FilePath 'node' -ArgumentList 'server/index.js' -PassThru -WindowStyle Minimized -RedirectStandardOutput $backendOut -RedirectStandardError $backendErr
 
 Write-Host "==> Aguardando o backend responder em http://localhost:4000/api/health ..." -ForegroundColor Cyan
 $ready = $false
@@ -55,8 +57,10 @@ if (-not $ready) {
 
 Write-Host "==> Backend OK. Abrindo Cloudflare Tunnel (quick tunnel)..." -ForegroundColor Cyan
 $tunnelLog = 'cloudflared-local.log'
+$tunnelErrLog = 'cloudflared-local.err.log'
 Remove-Item $tunnelLog -ErrorAction SilentlyContinue
-$tunnel = Start-Process -FilePath 'cloudflared' -ArgumentList 'tunnel', '--url', 'http://localhost:4000' -PassThru -WindowStyle Minimized -RedirectStandardOutput $tunnelLog -RedirectStandardError $tunnelLog
+Remove-Item $tunnelErrLog -ErrorAction SilentlyContinue
+$tunnel = Start-Process -FilePath 'cloudflared' -ArgumentList 'tunnel', '--url', 'http://localhost:4000' -PassThru -WindowStyle Minimized -RedirectStandardOutput $tunnelLog -RedirectStandardError $tunnelErrLog
 
 $publicUrl = $null
 for ($i = 0; $i -lt 30; $i++) {

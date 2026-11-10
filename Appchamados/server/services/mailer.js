@@ -12,10 +12,20 @@ const emailServiceApiKey = process.env.EMAIL_SERVICE_API_KEY || ''
 const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpFrom
 const resendFromAddress = String(process.env.RESEND_FROM_ADDRESS || `Suporte <${supportEmail}>`).trim()
 const emailFallbackEnabled = String(process.env.EMAIL_FALLBACK_ENABLED || '').trim().toLowerCase() === 'true'
+const requestedEmailProvider = String(process.env.EMAIL_PROVIDER || 'auto').trim().toLowerCase()
 
 const smtpConfigured = Boolean(smtpHost && smtpPort && smtpUser && smtpPass)
 const resendConfigured = Boolean(resendApiKey && resendFromAddress)
 const apiEmailConfigured = Boolean(emailServiceApiKey && emailFromAddress)
+const emailProviderConfiguration = {
+  smtp: smtpConfigured,
+  resend: resendConfigured,
+  sendgrid: apiEmailConfigured,
+}
+const emailProvider = requestedEmailProvider === 'auto'
+  ? (resendConfigured ? 'resend' : apiEmailConfigured ? 'sendgrid' : smtpConfigured ? 'smtp' : 'fallback')
+  : requestedEmailProvider
+const emailProviderConfigured = Boolean(emailProviderConfiguration[emailProvider])
 
 const resendClient = resendConfigured ? new Resend(resendApiKey) : null
 
@@ -32,7 +42,7 @@ const transporter = smtpConfigured
   : null
 
 export function isSmtpConfigured() {
-  return smtpConfigured || resendConfigured || apiEmailConfigured
+  return emailProviderConfigured
 }
 
 export function getSupportEmail() {
@@ -40,19 +50,7 @@ export function getSupportEmail() {
 }
 
 export function getEmailProviderStatus() {
-  if (resendConfigured) {
-    return { configured: true, provider: 'resend' }
-  }
-
-  if (apiEmailConfigured) {
-    return { configured: true, provider: 'sendgrid' }
-  }
-
-  if (smtpConfigured) {
-    return { configured: true, provider: 'smtp' }
-  }
-
-  return { configured: false, provider: 'fallback' }
+  return { configured: emailProviderConfigured, provider: emailProvider }
 }
 
 export async function sendNotificationEmail({ to, subject, text, html, replyTo }) {
@@ -60,11 +58,11 @@ export async function sendNotificationEmail({ to, subject, text, html, replyTo }
     throw new Error('Dados insuficientes para enviar a notificação por e-mail.')
   }
 
-  if (!isSmtpConfigured()) {
+  if (!emailProviderConfigured) {
     throw new Error('Nenhum provedor de e-mail configurado. Configure SMTP, Resend ou SendGrid no ambiente do servidor.')
   }
 
-  if (resendConfigured) {
+  if (emailProvider === 'resend') {
     const { error } = await resendClient.emails.send({
       from: resendFromAddress,
       to: [to],
@@ -79,7 +77,7 @@ export async function sendNotificationEmail({ to, subject, text, html, replyTo }
     return { mode: 'resend' }
   }
 
-  if (apiEmailConfigured) {
+  if (emailProvider === 'sendgrid') {
     const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: {
@@ -162,21 +160,21 @@ async function sendVerificationEmail({ to, subject, text, html, fallbackLabel, c
     throw new Error('Dados insuficientes para enviar e-mail de confirmação.')
   }
 
-  if (!resendConfigured && !apiEmailConfigured && !smtpConfigured && emailFallbackEnabled) {
+  if (!emailProviderConfigured && emailFallbackEnabled) {
     console.log(`[SMTP-FALLBACK] ${fallbackLabel} para ${to}: ${code}`)
     return { mode: 'fallback' }
   }
 
-  if (!resendConfigured && !apiEmailConfigured && !smtpConfigured) {
+  if (!emailProviderConfigured) {
     throw new Error('Nenhum provedor de e-mail configurado. Configure SMTP, Resend ou SendGrid no ambiente do servidor.')
   }
 
-  if (resendConfigured) {
+  if (emailProvider === 'resend') {
     await sendEmailViaResend({ to, subject, text, html })
     return { mode: 'resend' }
   }
 
-  if (apiEmailConfigured) {
+  if (emailProvider === 'sendgrid') {
     await sendEmailViaSendGrid({ to, subject, text, html })
     return { mode: 'sendgrid' }
   }

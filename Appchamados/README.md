@@ -49,7 +49,28 @@ O sistema usa `Suporte@upacentral.co.uk` como endereço do sistema e `Reply-To` 
 2. Preencha as variáveis SMTP ou `RESEND_API_KEY`/`RESEND_FROM_ADDRESS`.
 3. Reinicie o `npm start` e confirme no log `Provedor de e-mail: resend`, `smtp` ou `sendgrid`.
 
-Se Resend estiver configurado, ele passa a ser o provedor principal de e-mail. Em produção, sem SMTP/Resend/SendGrid configurado, a API informa erro em vez de confirmar um envio inexistente. Para testes locais, defina `EMAIL_FALLBACK_ENABLED=true` para registrar o código no log do servidor.
+Por padrão, `EMAIL_PROVIDER=auto` mantém a prioridade Resend, SendGrid e SMTP. Para forçar Gmail via SMTP, defina `EMAIL_PROVIDER=smtp`; isso também evita que uma chave Resend já existente continue selecionada. Em produção, sem o provedor selecionado corretamente configurado, a API informa erro em vez de confirmar um envio inexistente. Para testes locais, defina `EMAIL_FALLBACK_ENABLED=true` para registrar o código no log do servidor.
+
+### Gmail SMTP com banco neste computador
+
+Para o site publicado usar os dados que permanecem neste computador, o backend precisa rodar aqui e ficar acessível pela internet através do túnel. A configuração atual usa PostgreSQL local (`DATABASE_URL`) e o script `scripts/start-local-tunnel.ps1`; não aponte `DATABASE_URL` de um backend em nuvem para `localhost`, pois isso apontaria para a própria máquina da nuvem.
+
+No arquivo `.env` local, configure diretamente, sem compartilhar os valores:
+
+```env
+EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=SEU_ENDERECO_GMAIL
+SMTP_PASS=SENHA_DE_APP_DO_GOOGLE
+SMTP_FROM=SEU_ENDERECO_GMAIL
+SUPPORT_EMAIL=Suporte@upacentral.co.uk
+PUBLIC_APP_URL=https://SEU_SITE_PUBLICADO
+```
+
+Crie uma senha de app na conta Google com verificação em duas etapas ativada; não use a senha normal da conta. Para que a mensagem saia como `Suporte@upacentral.co.uk`, esse endereço precisa estar configurado e autorizado como alias de envio na conta Gmail/Google Workspace. Caso contrário, mantenha `SMTP_FROM` como o endereço Gmail autenticado; as respostas do chat continuam apontando para `Suporte@upacentral.co.uk`.
+
+Reinicie o backend para carregar as variáveis. Para publicar a conexão do computador ao site Netlify, use `scripts/start-local-tunnel.ps1 -UpdateNetlify` com Netlify CLI autenticada e o site já vinculado. A URL do quick tunnel é temporária: o computador, PostgreSQL, backend e túnel precisam permanecer ligados, e o script atualiza `VITE_API_URL` e dispara um novo deploy. Confira `/api/health`: `driver` deve ser `postgres` e `email` deve mostrar `configured: true` e `provider: smtp`.
 
 Chamados podem incluir o e-mail pessoal opcional do solicitante. Quando informado, o sistema envia a esse endereço a confirmação **“Seu chamado foi aberto com sucesso!”**, com o número do chamado e um link privado para o chat. As respostas da equipe também são enviadas ao mesmo endereço. Configure um provedor real (SMTP, Resend ou SendGrid) e `PUBLIC_APP_URL` com a URL do frontend (por exemplo, `https://seu-dominio.com`) para habilitar o envio e gerar links corretos. Sem provedor configurado, o chamado é salvo, mas nenhum e-mail pode ser enviado; a aplicação informa esse erro.
 
