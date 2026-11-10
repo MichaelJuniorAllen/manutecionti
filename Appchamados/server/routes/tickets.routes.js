@@ -602,6 +602,105 @@ function escapeHtml(value = '') {
   })[character])
 }
 
+function resolveEmailAddress(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) {
+    return value.map(resolveEmailAddress).find(Boolean) || ''
+  }
+  if (typeof value === 'object') {
+    return value.email || value.address || value.value || ''
+  }
+  return String(value)
+}
+
+function normalizeEmailAddress(value = '') {
+  return String(resolveEmailAddress(value) || '').trim().toLowerCase()
+}
+
+function extractTicketReferenceFromSubject(value = '') {
+  const subject = String(value || '')
+  const match = subject.match(/(?:#|CH[-_\s]?)([A-Z0-9-]+)/i)
+  if (!match) return ''
+  return match[1].replace(/[^A-Z0-9-]/gi, '').toUpperCase()
+}
+
+function stripHtml(value = '') {
+  return String(value || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+async function ingestInboundReply(payload = {}) {
+  const from = resolveEmailAddress(payload.from || payload.sender || payload.email || payload.headers?.from || '')
+  const rawText = payload.text || payload.plain_text || payload.body || payload.message || ''
+  const htmlBody = payload.html || payload.html_body || ''
+  const subject = String(payload.subject || payload.Subject || payload.headers?.subject || '').trim()
+  const normalizedText = String(rawText || stripHtml(htmlBody) || '').trim()
+
+  if (!from || !normalizedText) {
+    throw createHttpError(400, 'E-mail recebido sem remetente ou mensagem.')
+  }
+
+  const db = await readDatabase()
+  const requesterEmail = normalizeEmailAddress(from)
+  const subjectReference = extractTicketReferenceFromSubject(subject)
+
+  const ticket = db.chamados.find((item) => {
+    if (normalizeEmailAddress(item.email_solicitante) === requesterEmail) return true
+    if (normalizeEmailAddress(item.email_corporativo) === requesterEmail) return true
+    if (subjectReference && String(item.numero_chamado || '').toUpperCase().includes(subjectReference)) return true
+    return false
+  })
+
+  if (!ticket) {
+    throw createHttpError(404, 'Nenhum chamado encontrado para esta resposta do e-mail.')
+  }
+
+  if (!Array.isArray(ticket.chat_messages)) ticket.chat_messages = []
+
+  const message = {
+    id: randomUUID(),
+    author_type: 'requester',
+    author_id: null,
+    author_name: ticket.solicitante || from,
+    text: normalizedText,
+    created_at: nowIso(),
+  }
+
+  ticket.chat_messages.push(message)
+  return {
+    ticketId: ticket.id,
+    numeroChamado: ticket.numero_chamado,
+    message,
+  }
+}
+
+router.post('/email/inbound', async (req, res) => {
+  try {
+    const result = await ingestInboundReply(req.body || {})
+    broadcastTicketEvent({
+      type: 'ticket-chat-updated',
+      ticketId: result.ticketId,
+      timestamp: nowIso(),
+    })
+
+    return res.status(200).json({
+      ok: true,
+      ticketId: result.ticketId,
+      numeroChamado: result.numeroChamado,
+      message: result.message,
+    })
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      message: error.message || 'Não foi possível registrar a resposta do e-mail no chat.',
+    })
+  }
+})
+
 function getChatTicketId(req) {
   return String(req.params.id || '')
 }
