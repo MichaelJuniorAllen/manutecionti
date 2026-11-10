@@ -635,10 +635,48 @@ function stripHtml(value = '') {
 }
 
 async function ingestInboundReply(payload = {}) {
-  const from = resolveEmailAddress(payload.from || payload.sender || payload.email || payload.headers?.from || '')
-  const rawText = payload.text || payload.plain_text || payload.body || payload.message || ''
-  const htmlBody = payload.html || payload.html_body || ''
-  const subject = String(payload.subject || payload.Subject || payload.headers?.subject || '').trim()
+  const eventPayload = payload && payload.data && typeof payload.data === 'object' ? payload.data : payload
+
+  const from = resolveEmailAddress(
+    eventPayload.from
+    || eventPayload.sender
+    || eventPayload.email
+    || eventPayload.from_email
+    || eventPayload.headers?.from
+    || payload?.from
+    || payload?.sender
+    || payload?.headers?.from
+    || '',
+  )
+
+  const rawText = eventPayload.text
+    || eventPayload.plain_text
+    || eventPayload.body
+    || eventPayload.message
+    || eventPayload.content?.text
+    || eventPayload.content?.body
+    || payload?.text
+    || payload?.body
+    || payload?.message
+    || ''
+
+  const htmlBody = eventPayload.html
+    || eventPayload.html_body
+    || eventPayload.content?.html
+    || payload?.html
+    || payload?.html_body
+    || ''
+
+  const subject = String(
+    eventPayload.subject
+    || eventPayload.Subject
+    || eventPayload.headers?.subject
+    || payload?.subject
+    || payload?.Subject
+    || payload?.headers?.subject
+    || '',
+  ).trim()
+
   const normalizedText = String(rawText || stripHtml(htmlBody) || '').trim()
 
   if (!from || !normalizedText) {
