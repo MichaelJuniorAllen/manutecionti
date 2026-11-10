@@ -636,6 +636,8 @@ function stripHtml(value = '') {
 
 async function ingestInboundReply(payload = {}) {
   const eventPayload = payload && payload.data && typeof payload.data === 'object' ? payload.data : payload
+  const eventType = String(payload?.type || eventPayload?.type || '').toLowerCase()
+  const isInboundEvent = eventType.includes('received') || eventType.includes('inbound') || eventType.includes('reply')
 
   const from = resolveEmailAddress(
     eventPayload.from
@@ -678,6 +680,10 @@ async function ingestInboundReply(payload = {}) {
   ).trim()
 
   const normalizedText = String(rawText || stripHtml(htmlBody) || '').trim()
+
+  if (!isInboundEvent && !normalizedText) {
+    return { ignored: true, reason: 'non-inbound-webhook-event' }
+  }
 
   if (!from || !normalizedText) {
     throw createHttpError(400, 'E-mail recebido sem remetente ou mensagem.')
@@ -729,6 +735,15 @@ async function ingestInboundReply(payload = {}) {
 router.post('/email/inbound', async (req, res) => {
   try {
     const result = await ingestInboundReply(req.body || {})
+
+    if (result?.ignored) {
+      return res.status(200).json({
+        ok: true,
+        ignored: true,
+        reason: result.reason,
+      })
+    }
+
     broadcastTicketEvent({
       type: 'ticket-chat-updated',
       ticketId: result.ticketId,
