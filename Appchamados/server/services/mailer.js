@@ -6,10 +6,10 @@ const smtpPort = Number(process.env.SMTP_PORT || 587)
 const smtpUser = process.env.SMTP_USER
 const smtpPass = process.env.SMTP_PASS
 const supportEmail = String(process.env.SUPPORT_EMAIL || 'Suporte@upacentral.co.uk').trim()
-const smtpFrom = process.env.SMTP_FROM || smtpUser || supportEmail
+const smtpFrom = String(process.env.SMTP_FROM || supportEmail || smtpUser || '').trim()
 const resendApiKey = process.env.RESEND_API_KEY || ''
 const emailServiceApiKey = process.env.EMAIL_SERVICE_API_KEY || ''
-const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpFrom
+const emailFromAddress = String(process.env.EMAIL_FROM_ADDRESS || supportEmail || smtpFrom || '').trim()
 const resendFromAddress = String(process.env.RESEND_FROM_ADDRESS || `Suporte <${supportEmail}>`).trim()
 const emailFallbackEnabled = String(process.env.EMAIL_FALLBACK_ENABLED || '').trim().toLowerCase() === 'true'
 const requestedEmailProvider = String(process.env.EMAIL_PROVIDER || 'auto').trim().toLowerCase()
