@@ -65,11 +65,10 @@ SMTP_PORT=587
 SMTP_USER=SEU_ENDERECO_GMAIL
 SMTP_PASS=SENHA_DE_APP_DO_GOOGLE
 SMTP_FROM=SEU_ENDERECO_GMAIL
-SUPPORT_EMAIL=Suporte@upacentral.co.uk
 PUBLIC_APP_URL=https://SEU_SITE_PUBLICADO
 ```
 
-Crie uma senha de app na conta Google com verificação em duas etapas ativada; não use a senha normal da conta. Para que a mensagem saia como `Suporte@upacentral.co.uk`, esse endereço precisa estar configurado e autorizado como alias de envio na conta Gmail/Google Workspace. Caso contrário, mantenha `SMTP_FROM` como o endereço Gmail autenticado; as respostas do chat continuam apontando para `Suporte@upacentral.co.uk`.
+Crie uma senha de app na conta Google com verificação em duas etapas ativada; não use a senha normal da conta. `SMTP_FROM` controla apenas o endereço de envio e precisa ser autorizado pela conta Gmail/Google Workspace. SMTP, por si só, não recebe nem adiciona respostas ao chat: para isso, configure o recebimento do Resend nas etapas abaixo. Enquanto não estiver configurado, responda pelo link seguro do chat.
 
 Reinicie o backend para carregar as variáveis. Para publicar a conexão do computador ao site Netlify, use `scripts/start-local-tunnel.ps1 -UpdateNetlify` com Netlify CLI autenticada e o site já vinculado. A URL do quick tunnel é temporária: o computador, PostgreSQL, backend e túnel precisam permanecer ligados, e o script atualiza `VITE_API_URL` e dispara um novo deploy. Confira `/api/health`: `driver` deve ser `postgres` e `email` deve mostrar `configured: true` e `provider: smtp`.
 
