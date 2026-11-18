@@ -41,13 +41,14 @@ npm run migrate:json-to-postgres
 
 Esse comando copia os dados atuais de `server/data/database.json` para PostgreSQL (tabela `app_state`).
 
-## SMTP e Resend para confirmação de e-mail
+## Envio e recebimento de respostas por e-mail
 
-O sistema usa `Suporte@upacentral.co.uk` como endereço do sistema e `Reply-To` das respostas do chat. Para enviar de verdade, também é necessário configurar as credenciais do provedor (SMTP, `RESEND_API_KEY` ou `EMAIL_SERVICE_API_KEY` do SendGrid); informar somente o endereço de e-mail não autentica o servidor de envio. O endereço precisa estar autorizado/verificado no provedor escolhido.
+Para enviar e-mails, configure as credenciais do provedor (SMTP, `RESEND_API_KEY` ou `EMAIL_SERVICE_API_KEY` do SendGrid) e um endereço remetente autorizado/verificado (`SMTP_FROM`, `RESEND_FROM_ADDRESS` ou `EMAIL_FROM_ADDRESS`). Para que uma resposta ao e-mail também apareça no chat do chamado, a aplicação usa o recebimento de e-mails do Resend.
 
 1. Copie `.env.example` para `.env`.
-2. Preencha as variáveis SMTP ou `RESEND_API_KEY`/`RESEND_FROM_ADDRESS`.
-3. Reinicie o `npm start` e confirme no log `Provedor de e-mail: resend`, `smtp` ou `sendgrid`.
+2. Preencha as variáveis do provedor de envio.
+3. Configure `RESEND_API_KEY`, `RESEND_INBOUND_DOMAIN` e `RESEND_WEBHOOK_SECRET`.
+4. Reinicie o `npm start` e confirme no log `Provedor de e-mail: resend`, `smtp` ou `sendgrid`.
 
 ### Respostas de e-mail no chat do chamado (Resend)
 
@@ -70,15 +71,24 @@ SMTP_PORT=587
 SMTP_USER=SEU_ENDERECO_GMAIL
 SMTP_PASS=SENHA_DE_APP_DO_GOOGLE
 SMTP_FROM=SEU_ENDERECO_GMAIL
-SUPPORT_EMAIL=Suporte@upacentral.co.uk
 PUBLIC_APP_URL=https://SEU_SITE_PUBLICADO
 ```
 
-Crie uma senha de app na conta Google com verificação em duas etapas ativada; não use a senha normal da conta. Para que a mensagem saia como `Suporte@upacentral.co.uk`, esse endereço precisa estar configurado e autorizado como alias de envio na conta Gmail/Google Workspace. Caso contrário, mantenha `SMTP_FROM` como o endereço Gmail autenticado; as respostas do chat continuam apontando para `Suporte@upacentral.co.uk`.
+Crie uma senha de app na conta Google com verificação em duas etapas ativada; não use a senha normal da conta. `SMTP_FROM` controla apenas o endereço de envio e precisa ser autorizado pela conta Gmail/Google Workspace. SMTP, por si só, não recebe nem adiciona respostas ao chat: para isso, configure o recebimento do Resend nas etapas abaixo. Enquanto não estiver configurado, responda pelo link seguro do chat.
 
 Reinicie o backend para carregar as variáveis. Para publicar a conexão do computador ao site Netlify, use `scripts/start-local-tunnel.ps1 -UpdateNetlify` com Netlify CLI autenticada e o site já vinculado. A URL do quick tunnel é temporária: o computador, PostgreSQL, backend e túnel precisam permanecer ligados, e o script atualiza `VITE_API_URL` e dispara um novo deploy. Confira `/api/health`: `driver` deve ser `postgres` e `email` deve mostrar `configured: true` e `provider: smtp`.
 
-Chamados podem incluir o e-mail pessoal opcional do solicitante. Quando informado, o sistema envia a esse endereço a confirmação **“Seu chamado foi aberto com sucesso!”**, com o número do chamado e um link privado para o chat. As respostas da equipe também são enviadas ao mesmo endereço. Configure um provedor real (SMTP, Resend ou SendGrid) e `PUBLIC_APP_URL` com a URL do frontend (por exemplo, `https://seu-dominio.com`) para habilitar o envio e gerar links corretos. Sem provedor configurado, o chamado é salvo, mas nenhum e-mail pode ser enviado; a aplicação informa esse erro.
+Chamados podem incluir o e-mail pessoal do solicitante. A confirmação e as respostas da equipe incluem um link privado para o chat. Quando o recebimento do Resend está configurado, o endereço de resposta exclusivo do chamado inclui uma chave aleatória; e-mails recebidos nele são adicionados ao mesmo histórico do chat. Só são aceitos e-mails cujo remetente corresponda ao e-mail cadastrado no chamado, e a assinatura do webhook é verificada.
+
+Para habilitar respostas por e-mail:
+
+1. Use um domínio de recebimento verificado no Resend e configure o registro MX que o painel do Resend fornecer. Se o domínio já recebe e-mails, prefira um subdomínio dedicado para não interromper as caixas postais existentes.
+2. Defina `RESEND_INBOUND_DOMAIN` com esse domínio ou subdomínio, sem `@`.
+3. No painel do Resend, crie um webhook para o evento `email.received` apontando para `https://SEU-BACKEND/api/webhooks/resend` e salve a chave de assinatura em `RESEND_WEBHOOK_SECRET`.
+4. Configure `PUBLIC_APP_URL` com a URL do frontend e faça o deploy do backend.
+5. Confira `https://SEU-BACKEND/api/health`: `email.inboundRepliesConfigured` deve ser `true`. Envie uma resposta de um e-mail cadastrado e confirme que ela aparece no chat.
+
+O endereço `Suporte@upacentral.co.uk` usado anteriormente como remetente padrão/`Reply-To` não recebe respostas se o domínio não existir ou não tiver MX. O erro de entrega mostrado pelo Gmail indica que o DNS de `upacentral.co.uk` não foi encontrado. Não use esse endereço: configure um remetente autorizado e um domínio que você controla no Resend. Sem a configuração de recebimento, o e-mail informa que o usuário deve responder pelo link seguro do chat; responder diretamente ao e-mail não será registrado. Em produção, o backend exige a configuração de recebimento para não iniciar silenciosamente sem esse recurso.
 
 ### Gerenciar domínio do Resend
 
@@ -113,16 +123,16 @@ Cadastre estas variáveis no painel do serviço do backend, nunca em arquivos co
 - `CORS_ORIGINS=https://SEU-SITE.pages.dev,https://SEU-DOMINIO.com` (somente origens reais)
 - `DATABASE_URL=postgresql://USUARIO:SENHA@HOST:5432/DBNAME`
 - `PGSSL=true`
-- `SUPPORT_EMAIL=Suporte@upacentral.co.uk`
-- Um provedor de envio verificado: SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`), Resend (`RESEND_API_KEY`, `RESEND_FROM_ADDRESS`) ou SendGrid (`EMAIL_SERVICE_API_KEY`, `EMAIL_FROM_ADDRESS`).
+- Um provedor de envio verificado: SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`), Resend (`RESEND_API_KEY`, `RESEND_FROM_ADDRESS`) ou SendGrid (`EMAIL_SERVICE_API_KEY`, `EMAIL_FROM_ADDRESS`). O endereço remetente precisa pertencer a um domínio autorizado nesse provedor.
+- Recebimento de respostas via Resend: `RESEND_API_KEY`, `RESEND_INBOUND_DOMAIN` e `RESEND_WEBHOOK_SECRET`. Configure também o MX do domínio e o webhook `email.received` no painel do Resend.
 
-O servidor de produção exige PostgreSQL, segredo JWT forte, URL pública do frontend, origens CORS e credenciais de e-mail. Sem esses requisitos, encerra com erro explícito em vez de iniciar com banco JSON local ou declarar notificações funcionando sem provedor.
+O servidor de produção exige PostgreSQL, segredo JWT forte, URL pública do frontend, origens CORS, credenciais para envio e recebimento de e-mail. Sem esses requisitos, encerra com erro explícito em vez de iniciar com banco JSON local ou declarar o chat por e-mail funcionando sem provedor.
 
 Como o banco está em outro computador, o backend publicado precisa ter uma rota de rede permanente até ele. Prefira VPN/rede privada ou permita no firewall somente o IP de saída do backend; não exponha a porta `5432` para toda a internet. Configure PostgreSQL para aceitar conexões remotas somente de clientes autorizados, com TLS e um usuário de aplicação de permissões restritas. A aplicação cria a tabela `app_state` automaticamente; esse usuário precisa poder criar e atualizar a tabela.
 
 Um IP `localhost` ou privado não será alcançável por um backend na nuvem. Use no `DATABASE_URL` o endereço realmente alcançável pelo servidor (por exemplo, o IP da VPN). Não envie senhas ou URLs com credenciais pelo GitHub/chat; cadastre-as somente como variáveis secretas no host do backend.
 
-Depois do deploy, verifique `https://SEU-BACKEND/api/health`: `driver` deve ser `postgres` e `email.configured` deve ser `true`.
+Depois do deploy, verifique `https://SEU-BACKEND/api/health`: `driver` deve ser `postgres`, `email.configured` e `email.inboundRepliesConfigured` devem ser `true`.
 
 ### 2. Configurar frontend
 

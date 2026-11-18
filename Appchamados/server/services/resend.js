@@ -1,51 +1,30 @@
 import { Resend } from 'resend'
 
 const resendApiKey = process.env.RESEND_API_KEY || ''
-const resendWebhookSecret = process.env.RESEND_WEBHOOK_SECRET || ''
-const resendInboundDomain = String(process.env.RESEND_INBOUND_DOMAIN || '').trim().toLowerCase()
 
 export function isResendConfigured() {
   return Boolean(resendApiKey)
 }
 
-export function getResendInboundStatus() {
-  return {
-    configured: Boolean(resendApiKey && resendWebhookSecret && resendInboundDomain),
-  }
+export function verifyResendWebhook(payload, headers, webhookSecret) {
+  const client = createResendClient()
+  return client.webhooks.verify({ payload, headers, webhookSecret })
 }
 
-export function getResendInboundDomain() {
-  return resendInboundDomain
-}
-
-export function getInboundReplyAddress(ticketId) {
-  if (!resendInboundDomain) return ''
-  const safeTicketId = String(ticketId || '').replace(/[^a-z0-9_-]/gi, '')
-  if (!safeTicketId) return ''
-  return `ticket-${safeTicketId}@${resendInboundDomain}`
-}
-
-export function verifyResendWebhook(payload, headers) {
-  if (!resendWebhookSecret) {
-    throw new Error('RESEND_WEBHOOK_SECRET nao configurada.')
+export async function getResendReceivedEmail(id) {
+  try {
+    const client = createResendClient()
+    const { data, error } = await client.emails.receiving.get(id)
+    if (error) {
+      throw error
+    }
+    if (!data) {
+      throw new Error('O e-mail recebido não foi encontrado no Resend.')
+    }
+    return data
+  } catch (error) {
+    throw normalizeResendError(error, 'Não foi possível recuperar o conteúdo do e-mail recebido.')
   }
-
-  return createResendClient().webhooks.verify({
-    payload,
-    headers,
-    webhookSecret: resendWebhookSecret,
-  })
-}
-
-export async function getReceivedEmail(emailId) {
-  const { data, error } = await createResendClient().emails.receiving.get(emailId)
-  if (error) {
-    throw normalizeResendError(error, 'Nao foi possivel recuperar o e-mail recebido no Resend.')
-  }
-  if (!data) {
-    throw new Error('O Resend nao retornou o conteudo do e-mail recebido.')
-  }
-  return data
 }
 
 function createResendClient() {

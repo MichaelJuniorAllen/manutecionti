@@ -3,17 +3,9 @@ import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { optionalAuth, requireAuth } from '../middleware/auth.js'
 import { verifyToken } from '../services/auth.js'
 import { createTicketNumber, mutateDatabase, nextNumericId, nowIso, readDatabase } from '../services/database.js'
-import { getSupportEmail, sendNotificationEmail } from '../services/mailer.js'
-import {
-  getInboundReplyAddress,
-  getReceivedEmail,
-  getResendInboundDomain,
-  getResendInboundStatus,
-  verifyResendWebhook,
-} from '../services/resend.js'
+import { getTicketReplyAddress, sendNotificationEmail } from '../services/mailer.js'
 
 const router = express.Router()
-export const resendWebhookRouter = express.Router()
 
 const priorityToMinutes = {
   critica: 20,
@@ -539,6 +531,10 @@ router.post('/', optionalAuth, async (req, res) => {
     if (chatAccessToken && payload.email_solicitante) {
       const publicAppUrl = String(process.env.PUBLIC_APP_URL || req.get('origin') || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '')
       const chatUrl = `${publicAppUrl}/chat/${encodeURIComponent(created.id)}?token=${encodeURIComponent(chatAccessToken)}`
+      const replyAddress = getTicketReplyAddress(created.id, chatAccessToken)
+      const replyInstruction = replyAddress
+        ? 'Você também pode responder diretamente a este e-mail.'
+        : 'Para responder, use o chat seguro pelo link abaixo. Respostas diretas a este e-mail não são recebidas.'
       const subject = `Seu chamado foi aberto com sucesso! (#${created.numeroChamado})`
       const text = [
         `Olá, ${created.solicitante || 'solicitante'}.`,
@@ -548,6 +544,7 @@ router.post('/', optionalAuth, async (req, res) => {
         `Número: ${created.numeroChamado}`,
         'Status: Aberto',
         '',
+        replyInstruction,
         'Acompanhe o chamado e responda à equipe pelo chat seguro:',
         chatUrl,
       ].join('\n')
@@ -559,11 +556,18 @@ router.post('/', optionalAuth, async (req, res) => {
           <p>Título: <strong>${escapeHtml(created.titulo)}</strong></p>
           <p>Número: <strong>${escapeHtml(created.numeroChamado)}</strong></p>
           <p>Status: <strong>Aberto</strong></p>
+          <p>${escapeHtml(replyInstruction)}</p>
           <p><a href="${escapeHtml(chatUrl)}">Acompanhar e responder pelo chat seguro</a></p>
         </div>
       `
       try {
-        await sendNotificationEmail({ to: payload.email_solicitante, subject, text, html })
+        await sendNotificationEmail({
+          to: payload.email_solicitante,
+          subject,
+          text,
+          html,
+          ...(replyAddress ? { replyTo: replyAddress } : {}),
+        })
         emailSent = true
       } catch (error) {
         emailError = error.message || 'Não foi possível enviar a notificação por e-mail.'
@@ -609,198 +613,6 @@ function escapeHtml(value = '') {
     "'": '&#39;',
   })[character])
 }
-
-function resolveEmailAddress(value) {
-  if (!value) return ''
-  if (typeof value === 'string') return value.match(/<([^<>]+)>/)?.[1] || value
-  if (Array.isArray(value)) {
-    return value.map(resolveEmailAddress).find(Boolean) || ''
-  }
-  if (typeof value === 'object') {
-    return value.email || value.address || value.value || ''
-  }
-  return String(value)
-}
-
-function normalizeEmailAddress(value = '') {
-  return String(resolveEmailAddress(value) || '').trim().toLowerCase()
-}
-
-function extractTicketReferenceFromSubject(value = '') {
-  const subject = String(value || '')
-  const match = subject.match(/(?:#|CH[-_\s]?)([A-Z0-9-]+)/i)
-  if (!match) return ''
-  return match[1].replace(/[^A-Z0-9-]/gi, '').toUpperCase()
-}
-
-function stripHtml(value = '') {
-  return String(value || '')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-async function ingestInboundReply(payload = {}) {
-  const eventPayload = payload && payload.data && typeof payload.data === 'object' ? payload.data : payload
-  const from = resolveEmailAddress(
-    eventPayload.from
-    || eventPayload.sender
-    || eventPayload.email
-    || eventPayload.from_email
-    || eventPayload.headers?.from
-    || payload?.from
-    || payload?.sender
-    || payload?.headers?.from
-    || '',
-  )
-
-  const rawText = eventPayload.text
-    || eventPayload.plain_text
-    || eventPayload.body
-    || eventPayload.message
-    || eventPayload.content?.text
-    || eventPayload.content?.body
-    || payload?.text
-    || payload?.body
-    || payload?.message
-    || ''
-
-  const htmlBody = eventPayload.html
-    || eventPayload.html_body
-    || eventPayload.content?.html
-    || payload?.html
-    || payload?.html_body
-    || ''
-
-  const subject = String(
-    eventPayload.subject
-    || eventPayload.Subject
-    || eventPayload.headers?.subject
-    || payload?.subject
-    || payload?.Subject
-    || payload?.headers?.subject
-    || '',
-  ).trim()
-  const emailId = String(eventPayload.id || eventPayload.email_id || eventPayload.emailId || '').trim()
-  const inboundDomain = getResendInboundDomain()
-  const recipientAddresses = [eventPayload.to, eventPayload.received_for, payload?.to]
-    .flatMap((value) => Array.isArray(value) ? value : [value])
-    .map((value) => normalizeEmailAddress(value))
-    .filter(Boolean)
-  const ticketIdFromRecipient = recipientAddresses
-    .map((address) => {
-      const suffix = `@${inboundDomain}`
-      if (!inboundDomain || !address.endsWith(suffix)) return ''
-      const localPart = address.slice(0, -suffix.length)
-      return localPart.startsWith('ticket-') ? localPart.slice('ticket-'.length) : ''
-    })
-    .find(Boolean) || ''
-  const normalizedText = String(rawText || stripHtml(htmlBody) || '').trim()
-
-  if (!from || !normalizedText) {
-    throw createHttpError(400, 'E-mail recebido sem remetente ou mensagem.')
-  }
-
-  const requesterEmail = normalizeEmailAddress(from)
-  const subjectReference = extractTicketReferenceFromSubject(subject)
-  return mutateDatabase(async (db) => {
-    const candidates = db.chamados.filter((item) => {
-      const itemEmail = normalizeEmailAddress(item.email_solicitante)
-      const itemCorporateEmail = normalizeEmailAddress(item.email_corporativo)
-      return itemEmail === requesterEmail || itemCorporateEmail === requesterEmail
-    })
-
-    let ticket = ticketIdFromRecipient
-      ? candidates.find((item) => String(item.id) === ticketIdFromRecipient)
-      : null
-
-    if (!ticket && subjectReference) {
-      ticket = candidates.find((item) => String(item.numero_chamado || '').toUpperCase().includes(subjectReference)) || null
-    } else if (!ticket && !subjectReference && candidates.length === 1) {
-      ticket = candidates[0]
-    }
-
-    if (!ticket) {
-      throw createHttpError(404, 'Nenhum chamado correspondente foi encontrado para esta resposta.')
-    }
-
-    if (!Array.isArray(ticket.chat_messages)) ticket.chat_messages = []
-    if (emailId && ticket.chat_messages.some((message) => message.source_email_id === emailId)) {
-      return { duplicate: true, ticketId: ticket.id, numeroChamado: ticket.numero_chamado }
-    }
-
-    const message = {
-      id: randomUUID(),
-      author_type: 'requester',
-      author_id: null,
-      author_name: ticket.solicitante || from,
-      text: normalizedText,
-      created_at: nowIso(),
-      ...(emailId ? { source_email_id: emailId } : {}),
-    }
-
-    ticket.chat_messages.push(message)
-    return { ticketId: ticket.id, numeroChamado: ticket.numero_chamado, message }
-  })
-}
-
-resendWebhookRouter.post('/resend', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
-  if (!getResendInboundStatus().configured) {
-    return res.status(503).json({ message: 'Recebimento de respostas por e-mail não está configurado.' })
-  }
-
-  if (!Buffer.isBuffer(req.body)) {
-    return res.status(400).json({ message: 'O webhook precisa enviar um corpo JSON válido.' })
-  }
-
-  let event
-  try {
-    event = verifyResendWebhook(req.body.toString('utf8'), {
-      id: req.get('svix-id'),
-      timestamp: req.get('svix-timestamp'),
-      signature: req.get('svix-signature'),
-    })
-  } catch {
-    return res.status(401).json({ message: 'Assinatura do webhook inválida.' })
-  }
-
-  if (event.type !== 'email.received') {
-    return res.status(200).json({ ok: true, ignored: true, reason: 'unsupported-event' })
-  }
-
-  const emailId = String(event.data?.email_id || event.data?.id || '').trim()
-  if (!emailId) {
-    return res.status(400).json({ message: 'Evento email.received sem email_id.' })
-  }
-
-  try {
-    const receivedEmail = await getReceivedEmail(emailId)
-    const result = await ingestInboundReply({ type: event.type, data: { ...receivedEmail, id: emailId } })
-
-    if (result.duplicate) {
-      return res.status(200).json({ ok: true, duplicate: true, ticketId: result.ticketId })
-    }
-
-    broadcastTicketEvent({
-      type: 'ticket-chat-updated',
-      ticketId: result.ticketId,
-      timestamp: nowIso(),
-    })
-
-    return res.status(200).json({
-      ok: true,
-      ticketId: result.ticketId,
-      numeroChamado: result.numeroChamado,
-      message: result.message,
-    })
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({
-      message: error.message || 'Não foi possível registrar a resposta do e-mail no chat.',
-    })
-  }
-})
 
 function getChatTicketId(req) {
   return String(req.params.id || '')
@@ -908,19 +720,24 @@ router.post('/:id/chat', optionalAuth, async (req, res) => {
     if (isStaff && recipient) {
       const subject = `Nova resposta no chamado ${ticketNumber}`
       const escapedMessage = escapeHtml(text).replace(/\n/g, '<br>')
+      const replyAddress = getTicketReplyAddress(getChatTicketId(req), authorizedTicket.chat_access_token)
+      const replyInstruction = replyAddress
+        ? 'Você pode responder diretamente a este e-mail ou abrir o chat seguro.'
+        : 'Para responder, abra o chat seguro pelo link abaixo. Respostas diretas a este e-mail não são recebidas.'
       try {
         await sendNotificationEmail({
           to: recipient,
           subject,
-          text: `A equipe respondeu ao chamado ${ticketNumber}:\n\n${text}\n\nAcesse a conversa: ${chatUrl}`,
+          text: `A equipe respondeu ao chamado ${ticketNumber}:\n\n${text}\n\n${replyInstruction}\n\nAcesse a conversa: ${chatUrl}`,
           html: `
             <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.5; color: #20251f;">
               <h2>Nova resposta no chamado ${escapeHtml(ticketNumber)}</h2>
               <p>${escapedMessage}</p>
+              <p>${escapeHtml(replyInstruction)}</p>
               <p><a href="${escapeHtml(chatUrl)}">Abrir e responder no chat</a></p>
             </div>
           `,
-          replyTo: getInboundReplyAddress(getChatTicketId(req)) || getSupportEmail(),
+          ...(replyAddress ? { replyTo: replyAddress } : {}),
         })
         emailSent = true
       } catch (error) {
