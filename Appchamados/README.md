@@ -49,6 +49,12 @@ O sistema usa `Suporte@upacentral.co.uk` como endereço do sistema e `Reply-To` 
 2. Preencha as variáveis SMTP ou `RESEND_API_KEY`/`RESEND_FROM_ADDRESS`.
 3. Reinicie o `npm start` e confirme no log `Provedor de e-mail: resend`, `smtp` ou `sendgrid`.
 
+### Respostas de e-mail no chat do chamado (Resend)
+
+Para que uma resposta enviada pelo e-mail do chamado apareça na conversa do site, configure no ambiente do backend `RESEND_API_KEY`, `RESEND_INBOUND_DOMAIN` (por exemplo, `inbound.seu-dominio.com`) e `RESEND_WEBHOOK_SECRET`. Cadastre no Resend um webhook para o evento `email.received` apontando para `https://SEU-BACKEND/api/webhooks/resend`. O endpoint valida a assinatura usando o corpo bruto, recupera a mensagem recebida no Resend e grava a resposta no chat associado ao chamado. As notificações de resposta da equipe usam um endereço `Reply-To` específico por chamado no domínio inbound.
+
+O health check `/api/health` informa `email.inboundRepliesConfigured` sem expor credenciais. O endpoint retorna `401` para assinatura inválida e `503` quando a configuração de recebimento está incompleta. O remetente da resposta deve corresponder ao e-mail registrado no chamado.
+
 Por padrão, `EMAIL_PROVIDER=auto` mantém a prioridade Resend, SendGrid e SMTP. Para forçar Gmail via SMTP, defina `EMAIL_PROVIDER=smtp`; isso também evita que uma chave Resend já existente continue selecionada. Em produção, sem o provedor selecionado corretamente configurado, a API informa erro em vez de confirmar um envio inexistente. Para testes locais, defina `EMAIL_FALLBACK_ENABLED=true` para registrar o código no log do servidor.
 
 ### Gmail SMTP com banco neste computador

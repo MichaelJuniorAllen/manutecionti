@@ -7,8 +7,10 @@ import authRoutes from './routes/auth.routes.js'
 import profileRoutes from './routes/profile.routes.js'
 import settingsRoutes from './routes/settings.routes.js'
 import ticketsRoutes from './routes/tickets.routes.js'
+import { resendWebhookRouter } from './routes/tickets.routes.js'
 import { ensureDatabase, getDatabasePath, isUsingPostgres } from './services/database.js'
 import { getEmailProviderStatus } from './services/mailer.js'
+import { getResendInboundStatus } from './services/resend.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 4000)
@@ -138,6 +140,7 @@ async function initializeApplication() {
   app.use(cors(corsOptions))
   // Comprime as respostas JSON (historico/chamados) antes de enviar pelo tunnel, reduzindo o tempo de transferencia.
   app.use(compression())
+  app.use('/api/webhooks', resendWebhookRouter)
   app.use(express.json({ limit: '3mb' }))
   app.use(express.urlencoded({ extended: true }))
   app.use('/uploads', express.static(path.resolve(process.cwd(), 'public', 'uploads')))
@@ -147,7 +150,10 @@ async function initializeApplication() {
       status: 'ok',
       db: getDatabasePath(),
       driver: isUsingPostgres() ? 'postgres' : 'json',
-      email: getEmailProviderStatus(),
+      email: {
+        ...getEmailProviderStatus(),
+        inboundRepliesConfigured: getResendInboundStatus().configured,
+      },
     })
   })
 
