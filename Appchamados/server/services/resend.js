@@ -6,6 +6,27 @@ export function isResendConfigured() {
   return Boolean(resendApiKey)
 }
 
+export function verifyResendWebhook(payload, headers, webhookSecret) {
+  const client = createResendClient()
+  return client.webhooks.verify({ payload, headers, webhookSecret })
+}
+
+export async function getResendReceivedEmail(id) {
+  try {
+    const client = createResendClient()
+    const { data, error } = await client.emails.receiving.get(id)
+    if (error) {
+      throw error
+    }
+    if (!data) {
+      throw new Error('O e-mail recebido não foi encontrado no Resend.')
+    }
+    return data
+  } catch (error) {
+    throw normalizeResendError(error, 'Não foi possível recuperar o conteúdo do e-mail recebido.')
+  }
+}
+
 function createResendClient() {
   if (!resendApiKey) {
     throw new Error('RESEND_API_KEY nao configurada.')

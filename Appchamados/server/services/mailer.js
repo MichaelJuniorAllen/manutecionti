@@ -5,12 +5,13 @@ const smtpHost = process.env.SMTP_HOST
 const smtpPort = Number(process.env.SMTP_PORT || 587)
 const smtpUser = process.env.SMTP_USER
 const smtpPass = process.env.SMTP_PASS
-const supportEmail = String(process.env.SUPPORT_EMAIL || 'Suporte@upacentral.co.uk').trim()
-const smtpFrom = String(process.env.SMTP_FROM || supportEmail || smtpUser || '').trim()
+const smtpFrom = String(process.env.SMTP_FROM || smtpUser || '').trim()
 const resendApiKey = process.env.RESEND_API_KEY || ''
+const resendInboundDomain = String(process.env.RESEND_INBOUND_DOMAIN || '').trim().toLowerCase()
+const resendWebhookSecret = String(process.env.RESEND_WEBHOOK_SECRET || '').trim()
 const emailServiceApiKey = process.env.EMAIL_SERVICE_API_KEY || ''
-const emailFromAddress = String(process.env.EMAIL_FROM_ADDRESS || supportEmail || smtpFrom || '').trim()
-const resendFromAddress = String(process.env.RESEND_FROM_ADDRESS || `Suporte <${supportEmail}>`).trim()
+const emailFromAddress = String(process.env.EMAIL_FROM_ADDRESS || smtpFrom || '').trim()
+const resendFromAddress = String(process.env.RESEND_FROM_ADDRESS || '').trim()
 const emailFallbackEnabled = String(process.env.EMAIL_FALLBACK_ENABLED || '').trim().toLowerCase() === 'true'
 const requestedEmailProvider = String(process.env.EMAIL_PROVIDER || 'auto').trim().toLowerCase()
 
@@ -26,6 +27,7 @@ const emailProvider = requestedEmailProvider === 'auto'
   ? (resendConfigured ? 'resend' : apiEmailConfigured ? 'sendgrid' : smtpConfigured ? 'smtp' : 'fallback')
   : requestedEmailProvider
 const emailProviderConfigured = Boolean(emailProviderConfiguration[emailProvider])
+const validInboundDomain = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(resendInboundDomain)
 
 const resendClient = resendConfigured ? new Resend(resendApiKey) : null
 
@@ -45,12 +47,26 @@ export function isSmtpConfigured() {
   return emailProviderConfigured
 }
 
-export function getSupportEmail() {
-  return supportEmail
+export function isInboundEmailConfigured() {
+  return Boolean(resendApiKey && validInboundDomain && resendWebhookSecret)
+}
+
+export function getTicketReplyAddress(ticketId, chatAccessToken) {
+  const id = String(ticketId || '')
+  const token = String(chatAccessToken || '')
+  if (!isInboundEmailConfigured() || !/^\d+$/.test(id) || !/^[a-f0-9]{64}$/i.test(token)) {
+    return ''
+  }
+
+  return `ticket-${id}-${token.slice(0, 32)}@${resendInboundDomain}`
 }
 
 export function getEmailProviderStatus() {
-  return { configured: emailProviderConfigured, provider: emailProvider }
+  return {
+    configured: emailProviderConfigured,
+    provider: emailProvider,
+    inboundRepliesConfigured: isInboundEmailConfigured(),
+  }
 }
 
 export async function sendNotificationEmail({ to, subject, text, html, replyTo }) {

@@ -3,7 +3,7 @@ import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { optionalAuth, requireAuth } from '../middleware/auth.js'
 import { verifyToken } from '../services/auth.js'
 import { createTicketNumber, mutateDatabase, nextNumericId, nowIso, readDatabase } from '../services/database.js'
-import { getSupportEmail, sendNotificationEmail } from '../services/mailer.js'
+import { getTicketReplyAddress, sendNotificationEmail } from '../services/mailer.js'
 
 const router = express.Router()
 
@@ -531,6 +531,10 @@ router.post('/', optionalAuth, async (req, res) => {
     if (chatAccessToken && payload.email_solicitante) {
       const publicAppUrl = String(process.env.PUBLIC_APP_URL || req.get('origin') || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '')
       const chatUrl = `${publicAppUrl}/chat/${encodeURIComponent(created.id)}?token=${encodeURIComponent(chatAccessToken)}`
+      const replyAddress = getTicketReplyAddress(created.id, chatAccessToken)
+      const replyInstruction = replyAddress
+        ? 'Você também pode responder diretamente a este e-mail.'
+        : 'Para responder, use o chat seguro pelo link abaixo. Respostas diretas a este e-mail não são recebidas.'
       const subject = `Seu chamado foi aberto com sucesso! (#${created.numeroChamado})`
       const text = [
         `Olá, ${created.solicitante || 'solicitante'}.`,
@@ -540,6 +544,7 @@ router.post('/', optionalAuth, async (req, res) => {
         `Número: ${created.numeroChamado}`,
         'Status: Aberto',
         '',
+        replyInstruction,
         'Acompanhe o chamado e responda à equipe pelo chat seguro:',
         chatUrl,
       ].join('\n')
@@ -551,11 +556,18 @@ router.post('/', optionalAuth, async (req, res) => {
           <p>Título: <strong>${escapeHtml(created.titulo)}</strong></p>
           <p>Número: <strong>${escapeHtml(created.numeroChamado)}</strong></p>
           <p>Status: <strong>Aberto</strong></p>
+          <p>${escapeHtml(replyInstruction)}</p>
           <p><a href="${escapeHtml(chatUrl)}">Acompanhar e responder pelo chat seguro</a></p>
         </div>
       `
       try {
-        await sendNotificationEmail({ to: payload.email_solicitante, subject, text, html })
+        await sendNotificationEmail({
+          to: payload.email_solicitante,
+          subject,
+          text,
+          html,
+          ...(replyAddress ? { replyTo: replyAddress } : {}),
+        })
         emailSent = true
       } catch (error) {
         emailError = error.message || 'Não foi possível enviar a notificação por e-mail.'
@@ -869,19 +881,24 @@ router.post('/:id/chat', optionalAuth, async (req, res) => {
     if (isStaff && recipient) {
       const subject = `Nova resposta no chamado ${ticketNumber}`
       const escapedMessage = escapeHtml(text).replace(/\n/g, '<br>')
+      const replyAddress = getTicketReplyAddress(getChatTicketId(req), authorizedTicket.chat_access_token)
+      const replyInstruction = replyAddress
+        ? 'Você pode responder diretamente a este e-mail ou abrir o chat seguro.'
+        : 'Para responder, abra o chat seguro pelo link abaixo. Respostas diretas a este e-mail não são recebidas.'
       try {
         await sendNotificationEmail({
           to: recipient,
           subject,
-          text: `A equipe respondeu ao chamado ${ticketNumber}:\n\n${text}\n\nAcesse a conversa: ${chatUrl}`,
+          text: `A equipe respondeu ao chamado ${ticketNumber}:\n\n${text}\n\n${replyInstruction}\n\nAcesse a conversa: ${chatUrl}`,
           html: `
             <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.5; color: #20251f;">
               <h2>Nova resposta no chamado ${escapeHtml(ticketNumber)}</h2>
               <p>${escapedMessage}</p>
+              <p>${escapeHtml(replyInstruction)}</p>
               <p><a href="${escapeHtml(chatUrl)}">Abrir e responder no chat</a></p>
             </div>
           `,
-          replyTo: getSupportEmail(),
+          ...(replyAddress ? { replyTo: replyAddress } : {}),
         })
         emailSent = true
       } catch (error) {

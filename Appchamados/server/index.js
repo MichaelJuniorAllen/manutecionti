@@ -7,8 +7,9 @@ import authRoutes from './routes/auth.routes.js'
 import profileRoutes from './routes/profile.routes.js'
 import settingsRoutes from './routes/settings.routes.js'
 import ticketsRoutes from './routes/tickets.routes.js'
+import webhooksRoutes from './routes/webhooks.routes.js'
 import { ensureDatabase, getDatabasePath, isUsingPostgres } from './services/database.js'
-import { getEmailProviderStatus } from './services/mailer.js'
+import { getEmailProviderStatus, isInboundEmailConfigured } from './services/mailer.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 4000)
@@ -52,6 +53,10 @@ function validateProductionConfiguration() {
 
   if (!getEmailProviderStatus().configured) {
     missing.push('credenciales de envío SMTP, Resend o SendGrid')
+  }
+
+  if (!isInboundEmailConfigured()) {
+    missing.push('RESEND_API_KEY, RESEND_INBOUND_DOMAIN y RESEND_WEBHOOK_SECRET (respuestas por e-mail)')
   }
 
   if (missing.length) {
@@ -138,6 +143,7 @@ async function initializeApplication() {
   app.use(cors(corsOptions))
   // Comprime as respostas JSON (historico/chamados) antes de enviar pelo tunnel, reduzindo o tempo de transferencia.
   app.use(compression())
+  app.use('/api/webhooks', webhooksRoutes)
   app.use(express.json({ limit: '3mb' }))
   app.use(express.urlencoded({ extended: true }))
   app.use('/uploads', express.static(path.resolve(process.cwd(), 'public', 'uploads')))
